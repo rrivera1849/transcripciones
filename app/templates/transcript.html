@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} · Transcripciones{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">← Todas las transcripciones</a></nav>
+<header class="t-head">
+  <form method="post" action="/t/{{ job.id }}/title" class="title-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <input class="title-input" name="title" value="{{ job.title }}" aria-label="Título">
+    <button class="link small" type="submit">Guardar título</button>
+  </form>
+  <div class="muted">{{ job.date }} · {{ duration }} · {{ job.original_filename }}</div>
+  <div class="actions">
+    <button class="secondary" type="button" id="copy-all">Copiar todo</button>
+    <a class="secondary" href="/t/{{ job.id }}/download/docx">Descargar Word</a>
+    <a class="secondary" href="/t/{{ job.id }}/download/txt">.txt</a>
+    <a class="secondary" href="/t/{{ job.id }}/download/srt">.srt</a>
+    <form method="post" action="/t/{{ job.id }}/delete" class="inline"
+          onsubmit="return confirm('¿Eliminar esta transcripción y su audio? No se puede deshacer.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <button class="danger" type="submit">Eliminar</button>
+    </form>
+  </div>
+</header>
+
+<div class="t-layout">
+  <aside class="card speakers">
+    <h2>Hablantes</h2>
+    <p class="muted small">Escribe quién es cada voz. Los cambios se guardan solos.</p>
+    {% if not speakers %}<p class="muted small">Esta transcripción no tiene voces identificadas.</p>{% endif %}
+    <datalist id="roles">{% for r in ROLE_SUGGESTIONS %}<option value="{{ r }}">{% endfor %}</datalist>
+    {% for s in speakers %}
+    <form class="speaker" hx-post="/t/{{ job.id }}/speaker/rename" hx-target="#turns" hx-swap="outerHTML"
+          hx-trigger="change">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <input type="hidden" name="speaker" value="{{ s.id }}">
+      <span class="swatch" style="background: {{ s.color }}"></span>
+      <input name="name" value="{{ s.name }}" list="roles" aria-label="Nombre del hablante">
+    </form>
+    {% endfor %}
+    {% if speakers|length > 1 %}
+    <details class="merge">
+      <summary>Unir dos hablantes</summary>
+      <form hx-post="/t/{{ job.id }}/speaker/merge" hx-target="#turns" hx-swap="outerHTML" class="stack"
+            hx-on::after-request="location.reload()">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <label>Esta voz…
+          <select name="absorb">{% for s in speakers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select>
+        </label>
+        <label>…es la misma persona que
+          <select name="keep">{% for s in speakers %}<option value="{{ s.id }}" {% if loop.index == 2 %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+        </label>
+        <button class="secondary" type="submit">Unir</button>
+      </form>
+    </details>
+    {% endif %}
+  </aside>
+
+  <section class="transcript">
+    {% include "_turns.html" %}
+  </section>
+</div>
+
+{% if audio_ok %}
+<div class="player"><audio id="audio" controls preload="metadata" src="/t/{{ job.id }}/audio"></audio></div>
+{% else %}
+<div class="player muted small">El audio ya no está disponible (se borra a los {{ retention_days }} días); la transcripción se conserva.</div>
+{% endif %}
+<script src="/static/transcript.js" defer></script>
+{% endblock %}

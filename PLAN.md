@@ -315,6 +315,11 @@ met.**
 **Exit criterion:** you upload a stand-in file at `localhost:8000`, wait, and
 download a speaker-labelled `.docx`, all from your laptop.
 
+**Status 2026-09-18:** built and exercised end-to-end in a headless browser
+(login → chunked upload → CPU transcription → transcript page → inline edit,
+speaker rename, turn reassignment, downloads). 19 tests. Modal path wired via
+the same client the CLI uses; to be confirmed on the laptop.
+
 ### Phase 3 — Deploy (½ day)
 
 Now the infrastructure: VPS, domain, Cloudflare tunnel (`docs/SETUP.md`

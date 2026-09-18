@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Entrar · Transcripciones{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>Entrar</h1>
+  {% if no_users %}
+  <p class="error">Todavía no hay cuentas. Crea una con <code>scripts/add_user.py</code>.</p>
+  {% endif %}
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/login" class="stack">
+    <label>Usuario <input name="username" autocomplete="username" required autofocus></label>
+    <label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="primary big" type="submit">Entrar</button>
+  </form>
+</section>
+{% endblock %}

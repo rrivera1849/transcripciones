@@ -1,0 +1,27 @@
+<div id="turns" data-job="{{ job.id }}">
+  {% for t in turns %}
+  <article class="turn" data-i="{{ t.i }}" data-start="{{ t.start }}" data-end="{{ t.end }}">
+    <div class="turn-head">
+      <button type="button" class="ts" title="Escuchar desde aquí" data-seek="{{ t.start }}">{{ t.start|ts }}</button>
+      {% if t.speaker %}
+      <form class="turn-speaker" hx-post="/t/{{ job.id }}/turn/{{ t.i }}/speaker" hx-target="#turns" hx-swap="outerHTML" hx-trigger="change">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <select name="speaker" style="color: {{ t.color }}" aria-label="Hablante">
+          {% for s in speakers %}<option value="{{ s.id }}" {% if s.id == t.speaker %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        </select>
+      </form>
+      {% endif %}
+      <button type="button" class="link small edit-btn">Editar</button>
+    </div>
+    <p class="turn-text">{{ t.text }}</p>
+    <form class="turn-edit" hidden hx-post="/t/{{ job.id }}/turn/{{ t.i }}/text" hx-target="#turns" hx-swap="outerHTML">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <textarea name="text" rows="4">{{ t.text }}</textarea>
+      <div class="row">
+        <button class="primary" type="submit">Guardar</button>
+        <button class="secondary cancel-btn" type="button">Cancelar</button>
+      </div>
+    </form>
+  </article>
+  {% endfor %}
+</div>

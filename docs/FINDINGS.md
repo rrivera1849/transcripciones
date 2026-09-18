@@ -2,6 +2,25 @@
 
 Running notes from real runs. Newest first.
 
+## 2026-09-18 — Phase 2 web app, first browser run
+
+Built the FastAPI + HTMX app and drove it headless with Playwright against
+the real 2-minute clip (CPU backend) and the GPU transcript of the full
+hearing (seeded). Everything in the phase-2 checklist works: login and
+lockout, chunked upload with progress, queue → worker → transcript, speaker
+rename that propagates to every turn, per-turn reassignment, merge, inline
+text edit, Word/txt/srt downloads, audio with HTTP range requests, delete.
+
+Notes:
+
+- Headless Chromium here cannot decode AAC, so the player shows 0:00 in the
+  screenshots; real Chrome, Edge and Safari play m4a natively. Worth a check
+  on Mom's laptop; if her browser balks, the worker can add an mp3 copy.
+- The speaker sidebar is sticky on desktop; on phone widths it must be
+  static or it covers the text (fixed).
+- The CPU backend has no diarization, so a 2-minute clip becomes two long
+  paragraphs; expected, and not representative of the Modal path.
+
 ## 2026-09-18 — First GPU run (Modal A10G, large-v3, full 26-minute hearing)
 
 Run from the laptop with `--min-speakers 3`. Outputs reviewed in full.

@@ -4,6 +4,23 @@ Spanish courtroom transcription with speaker labels. Web app (phase 2) plus a
 Modal GPU backend running WhisperX + pyannote. See `PLAN.md` for the design
 and `docs/SETUP.md` for the accounts you need.
 
+## Run the web app locally (phase 2)
+
+```bash
+uv sync --group dev
+uv run python scripts/add_user.py mama            # prints a generated password
+cp .env.example .env                              # set MODAL_TOKEN_ID/SECRET; TRANSCRIBER=modal
+uv run modal deploy modal_app.py                  # once, from this laptop
+uv run python -m app                              # web + worker; open http://127.0.0.1:8000
+```
+
+Set `TRANSCRIBER=local` (and optionally `LOCAL_MODEL=large-v3-turbo`) to
+transcribe on the laptop's CPU without Modal; that path has no speaker labels
+and is meant for development only.
+
+Docker: `docker compose up -d --build` runs `web` and `worker` with `data/`
+mounted. Phase 3 adds `cloudflared` and moves this to a VPS.
+
 ## Quick start (phase 1: transcription only)
 
 ```bash
@@ -30,6 +47,13 @@ Outputs land in `out/`: `.json` (raw segments + words), `.txt`, `.srt`, and
 ## Layout
 
 ```
+app/
+  main.py           FastAPI routes: login, chunked upload, job list, transcript page, exports, audio
+  worker.py         queue -> Modal (or local CPU) -> transcripts; retention sweep; restart-safe
+  db.py             SQLite schema (users, jobs, transcripts)
+  auth.py           bcrypt, signed 90-day session cookie, login lockout, CSRF
+  templates/        Spanish UI (Jinja2 + HTMX)
+  static/           style.css, upload.js (chunked upload), transcript.js (player, edit), htmx
 modal_app.py        Modal app: image with baked weights, Volume `audio-in`, Transcriber class, daily sweep
 transcribe/         shared package (also shipped into the Modal image)
   __init__.py       Transcript / Segment / Word dataclasses

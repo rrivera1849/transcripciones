@@ -29,6 +29,8 @@ class Turn:
     start: float
     end: float
     text: str
+    seg_from: int = 0  # index range into the *cleaned* segment list (inclusive)
+    seg_to: int = 0
 
 
 def clean_text(text: str) -> str:
@@ -78,7 +80,7 @@ def clean_segments(segments: list[Segment]) -> list[Segment]:
 def group_turns(segments: list[Segment]) -> list[Turn]:
     """Merge consecutive same-speaker segments into readable turns."""
     turns: list[Turn] = []
-    for seg in clean_segments(segments):
+    for i, seg in enumerate(clean_segments(segments)):
         text = seg.text
         gap = seg.start - turns[-1].end if turns else 0.0
         too_long = turns and (seg.end - turns[-1].start) > MAX_TURN_S and gap >= MIN_BREAK_GAP_S
@@ -91,9 +93,27 @@ def group_turns(segments: list[Segment]) -> list[Turn]:
             last = turns[-1]
             last.text = f"{last.text} {text}"
             last.end = max(last.end, seg.end)
+            last.seg_to = i
         else:
-            turns.append(Turn(seg.speaker, seg.start, seg.end, text))
+            turns.append(Turn(seg.speaker, seg.start, seg.end, text, i, i))
     return turns
+
+
+def replace_turn_text(segments: list[Segment], turn: Turn, new_text: str) -> list[Segment]:
+    """Collapse the turn's segments into one carrying the edited text."""
+    segs = clean_segments(segments)
+    first, last = segs[turn.seg_from], segs[turn.seg_to]
+    merged = Segment(first.start, last.end, clean_text(new_text), first.speaker, [])
+    return segs[: turn.seg_from] + [merged] + segs[turn.seg_to + 1 :]
+
+
+def set_turn_speaker(segments: list[Segment], turn: Turn, speaker: str) -> list[Segment]:
+    segs = clean_segments(segments)
+    for s in segs[turn.seg_from : turn.seg_to + 1]:
+        s.speaker = speaker
+        for w in s.words:
+            w.speaker = speaker
+    return segs
 
 
 def speaker_names(transcript: Transcript, overrides: dict[str, str] | None = None) -> dict[str, str]:

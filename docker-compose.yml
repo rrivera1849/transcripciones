@@ -1,0 +1,19 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes: ["./data:/data"]
+    ports: ["127.0.0.1:8000:8000"]   # local only; phase 3 puts cloudflared in front
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes: ["./data:/data"]
+    command: ["python", "-m", "app.worker"]
+  # phase 3:
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel run
+  #   environment: { TUNNEL_TOKEN: "${TUNNEL_TOKEN}" }
