@@ -33,10 +33,12 @@ volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 
 def _download_models() -> None:
     """Bake all weights into the image so cold starts don't download 4 GB."""
+    import nltk
     import whisperx
     from faster_whisper import download_model
 
     os.environ.setdefault("HF_HOME", MODEL_DIR)
+    nltk.download("punkt_tab", quiet=True)  # whisperx alignment sentence splitter
     download_model(WHISPER_MODEL)  # lands in HF_HOME, where whisperx looks at runtime
     whisperx.load_align_model(language_code="es", device="cpu")
     whisperx.load_model(WHISPER_MODEL, "cpu", compute_type="int8", language="es",
