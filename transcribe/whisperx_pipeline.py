@@ -28,8 +28,8 @@ def _device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def load_models(hf_token: str | None = None) -> None:
-    """Load ASR, alignment and diarization models (idempotent)."""
+def load_models(hf_token: str | None = None, diarize: bool = True) -> None:
+    """Load ASR, alignment and (optionally) diarization models (idempotent)."""
     global _asr, _align, _diarize
     import whisperx
 
@@ -54,7 +54,7 @@ def load_models(hf_token: str | None = None) -> None:
         )
     if _align is None:
         _align = whisperx.load_align_model(language_code=LANGUAGE, device=device)
-    if _diarize is None:
+    if diarize and _diarize is None:
         from whisperx.diarize import DiarizationPipeline
 
         _diarize = DiarizationPipeline(model_name=DIARIZE_MODEL, token=token, device=device)
@@ -71,7 +71,7 @@ def transcribe_file(
     """Run the full pipeline on a 16 kHz mono WAV and return a Transcript."""
     import whisperx
 
-    load_models()
+    load_models(diarize=diarize)
     device = _device()
     timing: dict[str, float] = {}
 
