@@ -1,0 +1,15 @@
+{
+  "language": "es",
+  "duration": 30.0,
+  "model": "test",
+  "segments": [
+    {"start": 0.0, "end": 2.5, "text": " Se abre la sesión.", "speaker": "SPEAKER_00", "words": []},
+    {"start": 2.6, "end": 5.0, "text": "Licenciado, tiene la palabra.", "speaker": "SPEAKER_00", "words": []},
+    {"start": 5.2, "end": 9.0, "text": "Con la venia del Tribunal, señoría.", "speaker": "SPEAKER_01", "words": []},
+    {"start": 9.1, "end": 9.2, "text": "eh", "speaker": "SPEAKER_01", "words": []},
+    {"start": 9.5, "end": 12.0, "text": "Objeción.", "speaker": "SPEAKER_02", "words": []},
+    {"start": 12.1, "end": 13.0, "text": "Ha lugar.", "speaker": "SPEAKER_00", "words": []},
+    {"start": 20.0, "end": 24.0, "text": "Continúe, licenciado.", "speaker": "SPEAKER_00", "words": []},
+    {"start": 24.5, "end": 28.0, "text": "   ", "speaker": "SPEAKER_01", "words": []}
+  ]
+}

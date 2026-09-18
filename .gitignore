@@ -1,0 +1,16 @@
+# secrets and local state
+.env
+.modal.toml
+data/
+out/
+samples/*
+!samples/.gitkeep
+
+# python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+uv.lock.bak

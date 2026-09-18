@@ -56,7 +56,7 @@ protected by a login and reachable from anywhere on the internet.
 ```
  Browser                      App host (laptop now, VPS later)                 Modal (GPU, pay per second)
  ┌──────────┐   HTTP(S)  ┌─────────────────────────────────────┐              ┌──────────────────────────┐
- │ upload   │ ─────────► │ web (FastAPI+HTMX)                  │              │ transcribe_hearing()     │
+ │ upload   │ ─────────► │ web (FastAPI+HTMX)                  │              │ Transcriber.run()        │
  │ 2 GB ok  │            │   │  SQLite + data/                 │  1. put file │  reads from Volume       │
  └──────────┘            │ worker ─────────────────────────────┼────────────► │  ffmpeg normalize        │
                          │   │         Modal Volume "audio-in" │  2. spawn    │  WhisperX large-v3 (es)  │
@@ -74,7 +74,7 @@ protected by a login and reachable from anywhere on the internet.
    `data/audio/{job_id}/` and inserts a `jobs` row (`queued`).
 2. The worker picks up the job and streams the file into a Modal **Volume**
    (`audio-in`) under `{job_id}/input.<ext>`, then calls
-   `transcribe_hearing.spawn(job_id, options)`. It stores the Modal call id
+   `Transcriber.run.spawn(job_id, path, options)`. It stores the Modal call id
    and marks the job `running`.
 3. The Modal function reads the file from the mounted volume, normalizes it
    with ffmpeg, runs WhisperX (transcribe → align → diarize), deletes its
@@ -266,7 +266,7 @@ Local-first: only Modal and Hugging Face are needed to start. See
 ### Phase 1 — Modal transcription function (1 day)
 
 - [ ] `modal_app.py`: image with ffmpeg, WhisperX, pyannote, weights
-      pre-downloaded; Volume `audio-in`; `transcribe_hearing(job_id, options)
+      pre-downloaded; Volume `audio-in`; `Transcriber.run(job_id, path, options)
       -> dict`; daily sweep of stale inputs.
 - [ ] `transcribe/` package (shared, runs inside Modal and in tests):
       normalization, post-processing into speaker turns, exporters

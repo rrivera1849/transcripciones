@@ -159,8 +159,9 @@ Drive or Dropbox link), or commit them with Git LFS.
 
 ## 6. Give Claude what it needs for phase 1
 
-In claude.ai/code → Environments → your environment → **Environment
-variables**, add:
+Two things, both in claude.ai/code → Environments → your environment:
+
+**a. Environment variables**
 
 | Name | Value |
 |---|---|
@@ -168,11 +169,38 @@ variables**, add:
 | `MODAL_TOKEN_SECRET` | the `as-…` from step 2.3 |
 | `HF_TOKEN` | the `hf_…` from step 1.3 |
 
-This lets Claude deploy and run the Modal function from a session without
-the secrets ever appearing in chat or in git. If you'd rather not, Claude
-writes the code and you run `modal run` on your laptop and paste the output.
+**b. Network access.** The default policy blocks Modal and Hugging Face, so
+Claude cannot deploy or run the GPU job. Either set network access to
+**Full**, or keep it **Limited** and add these hosts to the allowlist:
 
-- [ ] Environment variables set (or decided to run Modal from the laptop)
+```
+modal.com
+api.modal.com
+modal-images.com
+huggingface.co
+cdn-lfs.huggingface.co
+cdn-lfs-us-1.huggingface.co
+hf.co
+youtube.com          # only if you want Claude to pull stand-in audio itself
+```
+
+Both changes apply to **new** sessions only: start a fresh session after
+saving them. Docs: https://code.claude.com/docs/en/claude-code-on-the-web
+
+**Alternative: run Modal from your laptop instead.** If you'd rather not open
+the environment's network, everything works from the repo checkout:
+
+```bash
+uv sync --group dev
+modal deploy modal_app.py                       # builds the image once (~10 min)
+modal run modal_app.py --file samples/x.m4a --out out/
+```
+
+and paste the printed timing line plus a few lines of `out/x.txt` back to
+Claude.
+
+- [ ] Env vars set and network opened, then a new session started
+      — or — running Modal from the laptop
 
 ## 7. Later, not now
 
