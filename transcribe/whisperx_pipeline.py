@@ -15,7 +15,7 @@ from . import Segment, Transcript, Word
 from .prompt import INITIAL_PROMPT, LANGUAGE
 
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "large-v3")
-DIARIZE_MODEL = "pyannote/speaker-diarization-3.1"
+DIARIZE_MODEL = "pyannote/speaker-diarization-community-1"
 
 _asr = None
 _align = None  # (model, metadata)

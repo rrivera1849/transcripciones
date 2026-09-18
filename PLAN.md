@@ -104,7 +104,7 @@ assignment much more accurate.
 |---|---|---|
 | ASR | `large-v3` via faster-whisper, `compute_type="float16"` | Best Spanish accuracy. On GPU the speed difference vs. turbo is irrelevant. |
 | Alignment | `wav2vec2` Spanish alignment model (WhisperX default for `es`) | Gives word-level timestamps. |
-| Diarization | `pyannote/speaker-diarization-3.1` | Requires a Hugging Face token and accepting the model license once. Free. |
+| Diarization | `pyannote/speaker-diarization-community-1` | pyannote's current pipeline (pyannote.audio 4). Requires a Hugging Face token and accepting the model licenses once. Free. |
 | Post-processing | ours | Merge consecutive same-speaker segments into turns; drop segments shorter than 0.3 s; normalize whitespace. |
 
 Whisper settings for courtroom Spanish:
@@ -255,7 +255,8 @@ Local-first: only Modal and Hugging Face are needed to start. See
 
 - [ ] Modal account; install CLI; `modal setup`; billing method on file.
 - [ ] Hugging Face account; accept licenses for
-      `pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`;
+      `pyannote/speaker-diarization-community-1`, `pyannote/speaker-diarization-3.1`
+      and `pyannote/segmentation-3.0`;
       create a read token; store it as the Modal secret `huggingface`.
 - [ ] Stand-in audio until real samples arrive: 2–3 public Puerto Rican
       multi-speaker recordings in a formal register (Legislatura de Puerto

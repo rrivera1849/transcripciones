@@ -16,6 +16,7 @@ Environment variables). Everything else lives in the VPS `.env`.
 1. Create an account at https://huggingface.co/join.
 2. Accept the gated-model conditions (a short form each, approval is
    immediate):
+   - https://huggingface.co/pyannote/speaker-diarization-community-1
    - https://huggingface.co/pyannote/speaker-diarization-3.1
    - https://huggingface.co/pyannote/segmentation-3.0
 3. Create a token: Settings → Access Tokens → **Create new token** →
@@ -23,7 +24,7 @@ Environment variables). Everything else lives in the VPS `.env`.
    `hf_`.
 
 - [ ] Account created
-- [ ] Both model licenses accepted
+- [ ] All three model licenses accepted
 - [ ] Read token created → goes to Modal (step 2.4) and to the Claude Code
       environment as `HF_TOKEN`
 

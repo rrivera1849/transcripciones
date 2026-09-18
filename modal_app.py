@@ -45,7 +45,7 @@ def _download_models() -> None:
                         use_auth_token=os.environ["HF_TOKEN"])  # also fetches the VAD model
     from whisperx.diarize import DiarizationPipeline
 
-    DiarizationPipeline(model_name="pyannote/speaker-diarization-3.1",
+    DiarizationPipeline(model_name="pyannote/speaker-diarization-community-1",
                         token=os.environ["HF_TOKEN"], device="cpu")
 
 
