@@ -10,8 +10,15 @@ from .prompt import default_speaker_name
 
 # Start a new paragraph for the same speaker after this much silence.
 PARAGRAPH_GAP_S = 4.0
+# Also break a long same-speaker turn at the next pause of at least this length.
+MAX_TURN_S = 60.0
+MIN_BREAK_GAP_S = 1.0
 # Drop segments shorter than this with no words (Whisper hallucinates on noise).
 MIN_SEGMENT_S = 0.3
+# Whisper repetition loops: collapse N identical consecutive segments, and
+# runs of one repeated token inside a segment ("no, no, no, no, ...").
+MAX_REPEATED_SEGMENTS = 2
+MAX_REPEATED_TOKENS = 3
 
 _WS = re.compile(r"\s+")
 
@@ -28,19 +35,58 @@ def clean_text(text: str) -> str:
     return _WS.sub(" ", text).strip()
 
 
-def group_turns(segments: list[Segment]) -> list[Turn]:
-    """Merge consecutive same-speaker segments into turns."""
-    turns: list[Turn] = []
+_TOKEN_RUN = re.compile(
+    r"(\b(\w+)\b[,.\s]*)(?:\2\b[,.\s]*){" + str(MAX_REPEATED_TOKENS) + ",}", re.IGNORECASE
+)
+
+
+def collapse_token_runs(text: str) -> str:
+    """'No, no, no, no, no, no.' -> 'No, no, no.'"""
+
+    def _shrink(m: re.Match) -> str:
+        units = re.findall(r"\b\w+\b[,.\s]*", m.group(0))
+        return "".join(units[:MAX_REPEATED_TOKENS])
+
+    new = _TOKEN_RUN.sub(_shrink, text)
+    if new == text:
+        return text
+    new = new.rstrip(", ")
+    return new + "." if text.rstrip().endswith(".") and not new.endswith(".") else new
+
+
+def clean_segments(segments: list[Segment]) -> list[Segment]:
+    """Remove Whisper hallucination loops; keeps timing of the surviving segment."""
+    out: list[Segment] = []
     for seg in segments:
         text = clean_text(seg.text)
         if not text:
             continue
         if (seg.end - seg.start) < MIN_SEGMENT_S and not seg.words:
             continue
+        key = text.lower()
+        run = [s for s in out[-MAX_REPEATED_SEGMENTS:] if clean_text(s.text).lower() == key]
+        if len(run) == MAX_REPEATED_SEGMENTS and len(out) >= MAX_REPEATED_SEGMENTS:
+            # third+ identical segment in a row: extend the previous one instead
+            out[-1].end = max(out[-1].end, seg.end)
+            continue
+        out.append(
+            Segment(seg.start, seg.end, collapse_token_runs(text), seg.speaker, list(seg.words))
+        )
+    return out
+
+
+def group_turns(segments: list[Segment]) -> list[Turn]:
+    """Merge consecutive same-speaker segments into readable turns."""
+    turns: list[Turn] = []
+    for seg in clean_segments(segments):
+        text = seg.text
+        gap = seg.start - turns[-1].end if turns else 0.0
+        too_long = turns and (seg.end - turns[-1].start) > MAX_TURN_S and gap >= MIN_BREAK_GAP_S
         if (
             turns
             and turns[-1].speaker == seg.speaker
-            and seg.start - turns[-1].end <= PARAGRAPH_GAP_S
+            and gap <= PARAGRAPH_GAP_S
+            and not too_long
         ):
             last = turns[-1]
             last.text = f"{last.text} {text}"

@@ -198,7 +198,9 @@ item ("compartir con…").
    status chip (Subiendo 63 % → En cola → Transcribiendo… → Listo / Error).
    She can rename a hearing ("Caso 2026-0142, vista 2"). The upload form
    asks "¿Cuántas personas hablan?" (default 3); it is passed to pyannote as
-   `min_speakers` and matters a lot on courtroom audio (see FINDINGS).
+   `min_speakers` and matters a lot on courtroom audio (see FINDINGS). A
+   second optional field, "Nombres y lugares" (parties, town, key terms),
+   is appended to the Whisper prompt as per-job vocabulary.
 3. `/t/{id}` — the transcript as a sequence of speaker turns:
 
    ```
@@ -288,9 +290,10 @@ Local-first: only Modal and Hugging Face are needed to start. See
 readable, correctly-punctuated Spanish and plausible speaker turns.
 
 **Status 2026-09-18:** pipeline validated on CPU with the first real hearing
-(see `docs/FINDINGS.md`). Transcript quality good; diarization needs a
-speaker-count hint and manual correction in the UI. GPU run on the full file
-pending (runs from the laptop, see `docs/SETUP.md` §6).
+(see `docs/FINDINGS.md`). GPU run on the full file done: 81 s for 26 min,
+4 speakers, usable draft. Transcript quality good; diarization needs a
+speaker-count hint and manual correction in the UI. **Phase 1 exit criterion
+met.**
 
 ### Phase 2 — Web app (2–3 days)
 

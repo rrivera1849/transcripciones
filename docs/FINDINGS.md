@@ -2,6 +2,57 @@
 
 Running notes from real runs. Newest first.
 
+## 2026-09-18 — First GPU run (Modal A10G, large-v3, full 26-minute hearing)
+
+Run from the laptop with `--min-speakers 3`. Outputs reviewed in full.
+
+**Speed**: transcribe 33 s, align 16 s, diarize 32 s, total 81 s for 1568 s
+of audio (≈19× realtime). A 3-hour hearing ≈ 10 min ≈ $0.20 on an A10G.
+
+**Transcript quality (large-v3)**: clearly better than turbo on CPU. Legal
+register, dates, amounts, the oath and most names are right. Errors seen,
+now folded into the prompt or the per-job vocabulary:
+
+| Heard | Should be | Fix |
+|---|---|---|
+| "en nuestra licitación" / "a un saludo de la ley 121" | "ante nuestra consideración" / "al amparo de la Ley 121" | phrase added to prompt |
+| "cuatro puertas y media" (later correctly "cuerdas") | "cuerdas" (PR land unit) | prompt |
+| "cuartero", "cuarteto" | "cuartel" (police station) | prompt |
+| "Salemencia" | "sala de emergencias" | prompt |
+| "despedir" | "de expedir" (la orden) | prompt |
+| "Morovi", "Norocovi", "Orocovi" | Morovis, Orocovis (municipalities) | per-job vocabulary field |
+| "Elvin" / "Elvis" / "Edwin" (same person) | one spelling | per-job vocabulary (party names) |
+| "la fecha y hora de la víctima" | "de la vista" | prompt has "vista" already; watch |
+
+**Hallucination loops** (classic Whisper on cross-talk): "Yo no llegué a
+leer nada." ×9 at 14:46 and "no, no, no…" ×22 at 04:21. Now collapsed in
+post-processing (`turns.clean_segments`): at most 2 identical consecutive
+segments and at most 3 repeated tokens in a row.
+
+**Diarization (community-1, min_speakers=3)**: found 4 speakers, and this
+time the split is usable as a draft.
+
+| Label | Seconds | Segments | Who (by content) |
+|---|---|---|---|
+| SPEAKER_03 → Hablante 1 | 556 | 218 | the judge |
+| SPEAKER_01 → Hablante 2 | 396 | 141 | one daughter (the one who witnessed the incident) |
+| SPEAKER_02 → Hablante 4 | 333 | 115 | the other daughter |
+| SPEAKER_00 → Hablante 3 | 32 | 16 | Don Juan (the father) |
+
+Remaining errors: short answers ("Sí", "Correcto", "Juro") absorbed into the
+judge's turns; a few judge questions inside a daughter's long turn and vice
+versa. 73 of 490 segments carry more than one word-level speaker, but the
+word labels flip too noisily to split on them automatically. Manual fix-up
+in the UI stays necessary; it will be a matter of minutes per hearing, not
+a rewrite.
+
+**Readability**: same-speaker turns now also break at the next pause ≥ 1 s
+once they exceed 60 s, so paragraphs stay scannable.
+
+**New option**: `vocabulary` (comma-separated party names, town, key terms)
+appended to the Whisper prompt per job. CLI: `--vocabulary "Morovis, Ciales,
+Elvin Omar Negrón"`. The UI will expose it on the upload form.
+
 ## 2026-09-18 — Phase 1 CPU validation on the first real hearing (Sala 5)
 
 Environment: Claude Code remote session, 4 vCPU, no GPU. Model

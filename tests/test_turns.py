@@ -47,3 +47,34 @@ def test_fmt_ts():
     assert fmt_ts(0) == "00:00:00"
     assert fmt_ts(3725.4) == "01:02:05"
     assert fmt_ts(61.25, with_ms=True) == "00:01:01,250"
+
+
+def test_clean_segments_collapses_repetition_loops():
+    from transcribe import Segment
+    from transcribe.turns import clean_segments, collapse_token_runs
+
+    segs = [Segment(i * 1.0, i * 1.0 + 0.9, "Yo no llegué a leer nada.", "S1") for i in range(9)]
+    segs.append(Segment(10.0, 12.0, "Nos entrevistó.", "S1"))
+    out = clean_segments(segs)
+    assert [s.text for s in out] == ["Yo no llegué a leer nada."] * 2 + ["Nos entrevistó."]
+    assert out[1].end == 8.9  # the collapsed run keeps the span
+    assert collapse_token_runs("No, no, no, no, no, no, no.") == "No, no, no."
+    assert collapse_token_runs("Sí, sí, gracias.") == "Sí, sí, gracias."
+
+
+def test_long_turn_breaks_at_a_pause():
+    from transcribe import Segment
+    from transcribe.turns import group_turns
+
+    segs = [Segment(t, t + 9.5, f"frase {t}", "S1") for t in range(0, 100, 10)]  # 0.5 s gaps
+    assert len(group_turns(segs)) == 1  # no pause long enough to break
+    segs[7] = Segment(72.0, 79.5, "frase 72", "S1")  # 2.5 s pause before it, past 60 s
+    assert len(group_turns(segs)) == 2
+
+
+def test_build_prompt_appends_vocabulary():
+    from transcribe.prompt import INITIAL_PROMPT, build_prompt
+
+    assert build_prompt(None) == INITIAL_PROMPT
+    p = build_prompt("Morovis, Ciales, Lcda. Torres")
+    assert p.startswith(INITIAL_PROMPT) and p.endswith("Morovis, Ciales, Lcda. Torres.")

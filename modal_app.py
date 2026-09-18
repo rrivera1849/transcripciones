@@ -104,6 +104,7 @@ class Transcriber:
             diarize=options.get("diarize", True),
             min_speakers=options.get("min_speakers"),
             max_speakers=options.get("max_speakers"),
+            vocabulary=options.get("vocabulary"),
         )
         print(f"[{job_id}] done: {transcript.timing} speakers={transcript.speakers()}")
 
@@ -137,7 +138,9 @@ def sweep_stale_inputs(max_age_hours: int = 24) -> int:
 
 
 @app.local_entrypoint()
-def main(file: str, out: str = "out", min_speakers: int = 0, max_speakers: int = 0):
+def main(
+    file: str, out: str = "out", min_speakers: int = 0, max_speakers: int = 0, vocabulary: str = ""
+):
     """Transcribe one local file end-to-end and write json/txt/srt/docx."""
     import uuid
 
@@ -156,6 +159,8 @@ def main(file: str, out: str = "out", min_speakers: int = 0, max_speakers: int =
         opts["min_speakers"] = min_speakers
     if max_speakers:
         opts["max_speakers"] = max_speakers
+    if vocabulary:
+        opts["vocabulary"] = vocabulary  # comma-separated names / places / terms
     result = Transcriber().run.remote(job_id, remote, opts)
     transcript = Transcript.from_dict(result)
     paths = write_all(transcript, out, src.stem, title=src.stem)
