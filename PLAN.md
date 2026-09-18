@@ -1,211 +1,289 @@
 # Transcripciones — Project Plan
 
 A small, self-hosted web app that lets a non-technical user upload Spanish
-audio files and get back accurate text transcripts, protected by a login and
-reachable from anywhere on the internet.
+courtroom recordings and get back accurate, speaker-labelled transcripts,
+protected by a login and reachable from anywhere on the internet.
 
 > Terminology: the task is **speech-to-text (STT / ASR)**, not TTS. TTS is the
 > reverse direction (text → voice). Everything below is about STT.
 
 ---
 
-## 1. Goals and non-goals
+## 1. What we know (decisions locked in)
+
+| Question | Answer | Consequence |
+|---|---|---|
+| Hosting | Cheap VPS for the web app + **Modal** serverless GPU for transcription | Two components; transcription is an async remote job. |
+| Content | **Court hearings**, recorded inside the courtroom | Long files (1–4 h), several speakers, far-field mics, legal vocabulary, sensitive data. |
+| Speaker labels | **Wanted** | Diarization is core scope, not a stretch goal. |
+| Source of files | Laptop | Desktop-first UI; large uploads must be reliable; phone support is nice-to-have. |
+| Sample audio | None yet, coming soon | Build against public stand-in audio; re-tune when real samples arrive. |
+
+---
+
+## 2. Goals and non-goals
 
 **Goals**
 
-- One user (Mom) uploads audio from a phone or laptop and gets a transcript.
-- Spanish-only, high accuracy, good punctuation.
+- One user (Mom) uploads a hearing recording and gets back a transcript with
+  timestamps and speaker labels ("Hablante 1", "Hablante 2", …) that she can
+  rename to "Juez", "Fiscal", "Testigo", etc.
+- Spanish-only, high accuracy, good punctuation, correct legal terms.
 - Zero technical steps for her: open a link, log in once, drag a file, wait,
-  read / copy / download.
-- Runs on open-source models; no per-minute API bills as the default path.
-- Password-protected and served over HTTPS.
+  read / copy / download a Word document.
+- Open-source models on infrastructure we control; no per-minute API vendor.
+- Password-protected, HTTPS, audio deleted automatically after a retention
+  window.
 
-**Non-goals (for v1)**
+**Non-goals (v1)**
 
-- Multi-tenant accounts, billing, public sign-up.
-- Real-time / live transcription.
-- Speaker labels and summaries (listed as optional phase 5).
+- Multiple accounts, public sign-up, billing.
+- Real-time / live transcription during the hearing.
+- Automatic identification of *who* a speaker is by name (she renames them).
+- Certified / legally admissible transcripts. This is a working aid; the
+  output must be reviewed by a human before any official use.
 
 ---
 
-## 2. Key decisions
+## 3. Architecture
 
-### 2.1 Transcription engine: `faster-whisper`
-
-| Option | Verdict |
-|---|---|
-| **faster-whisper** (CTranslate2 port of OpenAI Whisper) | **Chosen.** Best accuracy/speed trade-off, runs on CPU or GPU, mature, Python, Spanish is one of Whisper's strongest languages. |
-| whisper.cpp | Great on Apple Silicon / low-RAM CPU boxes. Keep as fallback if we end up hosting on a Mac. |
-| WhisperX | faster-whisper + word alignment + pyannote diarization. Use in phase 5 if speaker labels are wanted. |
-| NVIDIA Parakeet / Canary | Fast and multilingual, but less battle-tested for Spanish punctuation. Not chosen. |
-| Hosted APIs (OpenAI, Deepgram, AssemblyAI) | Not open-source, but the cheapest *effort*. Kept as an escape hatch behind the same interface. |
-
-Model choice depends on hardware (see 2.2):
-
-- GPU available → `large-v3` (best quality). ~10–20× realtime on an RTX 3060+.
-- CPU only → `large-v3-turbo` with `compute_type="int8"`. Roughly 1–2× realtime
-  on 8 cores; a 1-hour file takes ~30–60 minutes. Acceptable for batch use.
-- If CPU turbo is too slow, drop to `medium` (int8).
-
-Settings that matter for Spanish quality:
-
-```python
-model.transcribe(
-    path,
-    language="es",                      # never auto-detect; avoids Catalan/Portuguese drift
-    beam_size=5,
-    vad_filter=True,                    # skip silence, fewer hallucinations
-    condition_on_previous_text=False,   # prevents repeated-phrase loops on long files
-    initial_prompt="Hola, ¿cómo estás? Bien, gracias. Esta es una grabación en español.",
-)
+```
+ Mom's laptop                 VPS (Hetzner CX22-class, ~€4–8/mo)                 Modal (GPU, pay per second)
+ ┌──────────┐   HTTPS   ┌─────────────────────────────────────┐              ┌──────────────────────────┐
+ │ Browser  │ ────────► │ cloudflared ─► web (FastAPI+HTMX)   │              │ transcribe_hearing()     │
+ │ upload   │           │                 │  SQLite + data/   │  spawn job   │  ffmpeg normalize        │
+ │ 2 GB ok  │           │              worker ────────────────┼────────────► │  WhisperX large-v3 (es)  │
+ └──────────┘           │                 ▲   signed URL      │              │  wav2vec2 es alignment   │
+                        │                 │◄──────────────────┼── fetch ─────│  pyannote 3.1 diarize    │
+                        │                 │   poll result     │              │  → JSON segments         │
+                        └─────────────────┴───────────────────┘              └──────────────────────────┘
 ```
 
-The `initial_prompt` nudges the model toward proper Spanish punctuation and
-accents. We will tune it with real samples in phase 0.
+**Flow for one file**
 
-### 2.2 Where it runs
+1. Browser uploads in chunks to the VPS (`/upload`), which stores the file
+   under `data/audio/{job_id}/` and inserts a `jobs` row (`queued`).
+2. The worker picks up the job, mints a one-time signed download URL for the
+   file, and calls `transcribe_hearing.spawn(url, options)` on Modal. It
+   stores the Modal call id and marks the job `running`.
+3. The Modal function downloads the audio, normalizes it with ffmpeg, runs
+   WhisperX (transcribe → align → diarize) and returns JSON: segments with
+   start, end, text, speaker, and word timings. It keeps nothing after return.
+4. The worker polls the call id every 30 s, writes the result into
+   `transcripts`, groups segments into speaker turns, and marks the job `done`
+   (or `error` with a readable message).
+5. Mom's page polls every 5 s via HTMX and flips to "Listo".
 
-This is the decision that shapes everything else. Three viable paths:
-
-| Path | Cost | Speed | Ops burden | When to pick |
-|---|---|---|---|---|
-| **A. Home machine with a GPU + Cloudflare Tunnel** | $0/month | Fast | Machine must stay on; you own updates | You already have a desktop with an NVIDIA GPU (or an Apple Silicon Mac). |
-| **B. Small VPS, CPU only** (Hetzner CX32 / CPX31 class, 4–8 vCPU, 8–16 GB) | ~€8–15/month | Slow (turbo int8) | Low; always on | No home hardware, low volume, patience is fine. |
-| **C. Cheap VPS for the web app + serverless GPU for transcription** (Modal or RunPod Serverless) | VPS ~€5 + GPU pay-per-second (Modal has a monthly free credit) | Fast | Medium; two moving parts | No home GPU but you want fast turnaround. |
-
-**Recommendation:** A if you have the hardware, otherwise C. B is the fallback
-if you want the absolute simplest single-box setup and volume is low.
-
-The code is written so the transcription step is a single function behind an
-interface (`Transcriber.transcribe(path) -> Transcript`) with two
-implementations: `LocalFasterWhisper` and `RemoteModal`. Switching paths is a
-config change, not a rewrite.
-
-### 2.3 Exposure and authentication
-
-- **Cloudflare Tunnel** (`cloudflared`) exposes the app on a domain you own
-  without opening router ports or exposing your home IP. Free. Gives HTTPS
-  automatically. Works identically for a home box or a VPS.
-- **App-level login**: single username + password, bcrypt-hashed, stored in
-  `.env`. Session cookie lives 90 days so she logs in once per device and the
-  browser remembers it. Login is rate-limited (5 failures → 15-minute lockout).
-- **Optional second layer**: Cloudflare Access with email one-time-PIN. Free
-  for up to 50 users. Adds an email code prompt every 30 days; only enable it
-  if you're comfortable explaining that step to her. App-level login alone is
-  the simpler experience.
-
-### 2.4 Stack
-
-- **Python 3.12 + FastAPI** — the model runs in Python, so keep one language.
-- **Jinja2 + HTMX** — server-rendered pages, minimal JS, progress via polling.
-  Fewer moving parts than a SPA and easy to keep accessible.
-- **SQLite** — one file, one user, no DB server. Tables: `jobs`, `transcripts`.
-- **Background worker** — a separate process that polls the `jobs` table and
-  runs the model. No Redis/Celery for v1; SQLite as a queue is fine at this
-  volume. Model is loaded once at worker start and kept warm.
-- **ffmpeg** — normalize any input (mp3, m4a, wav, ogg/opus WhatsApp notes,
-  aac, mp4/mov video) to 16 kHz mono WAV before transcription.
-- **Docker Compose** — `web`, `worker`, `cloudflared`. One `docker compose up -d`.
+Why signed URL instead of passing bytes: hearing files can be multi-GB, and a
+URL keeps the VPS as the only place the raw audio is stored. Why `spawn` +
+poll instead of a blocking call: a 3-hour hearing can take 15–30 minutes;
+the worker must survive restarts and never hold an HTTP connection that long.
 
 ---
 
-## 3. User experience (what Mom sees)
+## 4. Transcription pipeline (the Modal function)
 
-Everything in Spanish. Large type, big buttons, works on a phone.
+**Engine: WhisperX** (faster-whisper under the hood, plus alignment and
+diarization). Chosen over plain faster-whisper because speaker labels are
+required, and WhisperX gives word-level timestamps that make the diarization
+assignment much more accurate.
 
-1. **`/login`** — "Usuario", "Contraseña", "Entrar". One-time per device.
-2. **`/` (home)** — one big dashed box: *"Arrastra un archivo de audio aquí o
-   toca para elegirlo"*. Below it, the list of her transcriptions, newest
-   first, each showing: file name, date, duration, status chip
-   (En cola / Transcribiendo… 42 % / Listo / Error).
-3. **Upload** — progress bar; on completion the row appears at the top as
-   "En cola". She can close the tab; it keeps going.
-4. **`/t/{id}` (transcript)** — the full text in a readable column with
-   paragraph breaks. Buttons: **Copiar todo**, **Descargar .txt**,
-   **Descargar .docx**, **Descargar .srt** (subtitles with timestamps),
-   **Escuchar** (embedded audio player, clicking a paragraph seeks the audio),
-   **Eliminar**.
-5. **Optional** — "Añadir a pantalla de inicio" as a PWA so it looks like an
-   app icon on her phone.
+| Stage | Model | Notes |
+|---|---|---|
+| ASR | `large-v3` via faster-whisper, `compute_type="float16"` | Best Spanish accuracy. On GPU the speed difference vs. turbo is irrelevant. |
+| Alignment | `wav2vec2` Spanish alignment model (WhisperX default for `es`) | Gives word-level timestamps. |
+| Diarization | `pyannote/speaker-diarization-3.1` | Requires a Hugging Face token and accepting the model license once. Free. |
+| Post-processing | ours | Merge consecutive same-speaker segments into turns; drop segments shorter than 0.3 s; normalize whitespace. |
 
-Guardrails: max upload 2 GB, accepted-extension check, friendly error messages
-("Este archivo no parece ser audio"), and audio files auto-deleted after 30
-days (transcripts kept) to limit disk use and exposure.
+Whisper settings for courtroom Spanish:
+
+```python
+asr_options = {
+    "beam_size": 5,
+    "condition_on_previous_text": False,   # avoid repeated-phrase loops on long files
+    "initial_prompt": (
+        "Transcripción de una vista judicial en español. "
+        "Intervienen el juez, la fiscal, el abogado defensor, el acusado y los testigos. "
+        "Señoría, con la venia, letrado, sentencia, prueba testifical, acusación, defensa."
+    ),
+}
+language = "es"        # never auto-detect
+vad = True             # skip silence, fewer hallucinations
+min_speakers / max_speakers = None  # let pyannote decide; expose as an optional field later
+```
+
+The `initial_prompt` is our "custom vocabulary". It will be tuned per
+jurisdiction once we know which country's courts these are (Spanish legal
+vocabulary differs between Spain, Puerto Rico, Mexico, …). See open questions.
+
+**Modal specifics**
+
+- GPU: `A10G` (or `L4`). Expect roughly 10–20× realtime end-to-end including
+  diarization; a 3-hour hearing ≈ 10–20 min of GPU ≈ $0.20–0.40.
+- `timeout=6 * 3600` so long hearings never get killed; `retries=1`.
+- Model weights baked into the image at build time (`large-v3`, alignment,
+  pyannote) so cold starts are seconds, not minutes.
+- Secrets: `HF_TOKEN` stored as a Modal secret, never in the repo.
+- Modal's free monthly credit will likely cover Mom's usage entirely.
+
+**Known limitations to tell Mom up front**
+
+- Diarization is good, not perfect: overlapping speech, someone speaking from
+  the back of the room, or two similar voices can get merged or split. The UI
+  lets her rename and fix speakers rather than pretending it's always right.
+- Inaudible passages come out as gaps or guesses. Timestamps let her jump to
+  the audio and check.
 
 ---
 
-## 4. Phases
+## 5. Web app
 
-### Phase 0 — Validate before building (½ day)
+**Stack:** Python 3.12, FastAPI, Jinja2 + HTMX (server-rendered, minimal JS),
+SQLite (also used as the job queue), one background worker process, Docker
+Compose with `web`, `worker`, `cloudflared`.
 
-- [ ] Get 2–3 real recordings from Mom (the actual kind: voice notes,
-      interviews, meetings, lectures?). Length and audio quality drive
-      everything.
-- [ ] Run `faster-whisper` on them from a script with `large-v3` and
-      `large-v3-turbo`. Read the output with her. Decide the model.
-- [ ] Decide hosting path (A / B / C) based on hardware you actually have.
-- [ ] Buy or pick a domain (e.g. `transcripciones.<yourdomain>`), add it to
-      Cloudflare (free plan).
+**Auth:** single username + bcrypt password from `.env`; signed session cookie
+lasting 90 days; login rate-limited (5 failures → 15-minute lockout).
+Cloudflare Tunnel provides HTTPS and hides the VPS. Cloudflare Access is
+optional and skipped by default to keep her experience simple.
 
-**Exit criterion:** she looks at a transcript and says "sí, esto sirve".
+**Pages (all copy in Spanish):**
 
-### Phase 1 — Transcription core (1 day)
+1. `/login` — Usuario / Contraseña / Entrar.
+2. `/` — big dashed drop zone ("Arrastra la grabación aquí o haz clic para
+   elegirla"), then the list of hearings newest-first: name, date, duration,
+   status chip (Subiendo 63 % → En cola → Transcribiendo… → Listo / Error).
+   She can rename a hearing ("Caso 2026-0142, vista 2").
+3. `/t/{id}` — the transcript as a sequence of speaker turns:
 
-- [ ] `transcribe/` package: ffmpeg normalization, `Transcriber` interface,
-      `LocalFasterWhisper` implementation, segment → paragraph grouping,
-      exporters for `.txt`, `.srt`, `.docx`.
-- [ ] CLI: `python -m transcribe audio.m4a` → writes outputs next to input.
-- [ ] Unit tests for paragraph grouping and exporters (use a 10-second fixture).
-- [ ] `Dockerfile` with ffmpeg + model weights pre-downloaded (so first run
-      isn't a 3 GB surprise). Separate CPU and CUDA base image variants.
+   ```
+   [00:12:05]  Juez        Se abre la sesión. Letrado, tiene la palabra.
+   [00:12:11]  Abogado     Con la venia, señoría. …
+   ```
+
+   - **Speaker sidebar**: each detected speaker with a colour and an editable
+     name. Renaming "Hablante 2" → "Fiscal" updates every turn instantly and is
+     saved. A "Fusionar con…" option merges two speakers the model split.
+   - **Audio player** pinned at the bottom; clicking a turn seeks to it; the
+     current turn highlights while playing.
+   - **Inline edit**: click a turn to correct a word. Edits are saved; the
+     original is kept for undo.
+   - **Buttons**: Copiar todo · Descargar .docx · Descargar .txt ·
+     Descargar .srt · Eliminar.
+4. `/settings` (for you, not her): retention days, min/max speakers default.
+
+**Exports**
+
+- `.docx` — the primary deliverable: title block (name, date, duration),
+  then one paragraph per turn with bold speaker name and grey timestamp.
+  Built with `python-docx`.
+- `.txt` — same content, plain.
+- `.srt` — subtitles with speaker prefix, useful for playing alongside video.
+
+**Uploads from a laptop**
+
+- Chunked upload (5 MB chunks, retried) so a flaky Wi-Fi drop doesn't restart a
+  2 GB upload. Progress bar with percentage. Accepts mp3, m4a, aac, wav, ogg,
+  opus, flac, wma, mp4, mov, m4v; ffmpeg handles the rest.
+- Max size 4 GB. Friendly rejection for non-audio files.
+
+**Data handling (court audio is sensitive)**
+
+- Audio deleted from the VPS 30 days after transcription (configurable);
+  transcripts kept until she deletes them.
+- Modal keeps nothing after the function returns; the signed URL expires in
+  6 hours and is single-use.
+- Nightly encrypted backup of `data/` (SQLite + transcripts, not audio) with
+  `restic` to Backblaze B2 or Cloudflare R2.
+- No third-party LLM summaries in v1. If we add summaries later, we decide
+  explicitly whether sending hearing text to an API is acceptable.
+
+---
+
+## 6. Phases
+
+### Phase 0 — Set up accounts and a stand-in dataset (½ day)
+
+- [ ] Modal account; install CLI; `modal token new`.
+- [ ] Hugging Face account; accept licenses for
+      `pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`;
+      create a read token; store it as a Modal secret.
+- [ ] VPS (Hetzner CX22 or similar, Ubuntu 24.04, Docker installed).
+- [ ] Domain in Cloudflare; create a tunnel, note the token.
+- [ ] Stand-in audio until real samples arrive: a long public Spanish
+      multi-speaker recording (a parliamentary session or a public court
+      broadcast works well — several speakers, formal register, room mics).
+      Keep 2–3 files of 20–60 min in `samples/` (git-ignored).
+
+### Phase 1 — Modal transcription function (1 day)
+
+- [ ] `modal_app.py`: image with ffmpeg, WhisperX, pyannote, weights
+      pre-downloaded; `transcribe_hearing(url, options) -> dict`.
+- [ ] `transcribe/` package (shared, runs inside Modal and in tests):
+      normalization, post-processing into speaker turns, exporters
+      (`txt`, `srt`, `docx`).
+- [ ] Local dev path: `python -m transcribe path.mp3 --local` runs
+      faster-whisper on CPU with `small` for fast iteration on the
+      post-processing and exporters without a GPU.
+- [ ] CLI: `python -m transcribe path.mp3 --modal` runs the real thing and
+      writes `path.docx / .txt / .srt / .json`.
+- [ ] Unit tests for turn grouping, speaker renaming/merging, and exporters
+      using a fixture JSON.
+- [ ] Measure: wall time and cost on the stand-in files; read the output for
+      punctuation and legal-term errors; adjust `initial_prompt`.
+
+**Exit criterion:** a 1-hour stand-in file comes back in under 10 minutes with
+readable, correctly-punctuated Spanish and plausible speaker turns.
 
 ### Phase 2 — Web app (2–3 days)
 
-- [ ] FastAPI app: login/logout, session middleware, rate limiting.
-- [ ] Upload endpoint (streams to disk, creates `jobs` row).
-- [ ] Worker process: claims jobs, updates `progress` as segments come in,
-      writes transcript, handles failures with a readable error.
-- [ ] Pages: home (list + upload), transcript view, downloads.
-- [ ] HTMX polling for status/progress every 5 s while any job is active.
-- [ ] Spanish copy throughout; mobile layout checked at 375 px width.
-- [ ] `docker-compose.yml` for `web` + `worker` sharing a `data/` volume.
-- [ ] If path C: `RemoteModal` transcriber + Modal function; worker calls it.
+- [ ] FastAPI app: login/logout, sessions, rate limiting, CSRF on forms.
+- [ ] Chunked upload endpoint; `jobs` table; signed download URL endpoint.
+- [ ] Worker: claim job → `spawn` on Modal → poll → store result; resilient to
+      restarts (re-attach to in-flight Modal calls on boot).
+- [ ] Home page, transcript page, speaker sidebar (rename, merge), inline
+      edit, audio player with seek, exports.
+- [ ] HTMX polling for status; Spanish copy; layout checked at laptop width
+      and at 375 px.
+- [ ] `docker-compose.yml` with `web`, `worker`, `cloudflared`; shared
+      `data/` volume; `restart: unless-stopped`.
 
-### Phase 3 — Deploy and expose (½ day)
+### Phase 3 — Deploy (½ day)
 
-- [ ] Install `cloudflared`, create tunnel, route `transcripciones.<domain>` →
-      `http://web:8000`. Add as a Compose service so it restarts with the rest.
-- [ ] `.env` with `APP_USERNAME`, `APP_PASSWORD_HASH`, `SECRET_KEY`,
-      `MODEL_NAME`, `DEVICE`, `TUNNEL_TOKEN`. Never committed.
-- [ ] Compose `restart: unless-stopped`; on a home box, make sure the machine
-      doesn't sleep and Docker starts on boot.
-- [ ] Nightly `data/` backup (transcripts + SQLite) — `restic` to Backblaze B2,
-      or simply rsync to another disk. Verify a restore once.
-- [ ] Basic health: `/healthz` endpoint + a free uptime check (UptimeRobot /
-      Better Stack) that emails **you** if it goes down.
+- [ ] `.env` on the VPS: `APP_USERNAME`, `APP_PASSWORD_HASH`, `SECRET_KEY`,
+      `MODAL_TOKEN_ID/SECRET`, `TUNNEL_TOKEN`, `PUBLIC_BASE_URL`,
+      `RETENTION_DAYS`. Never committed; `.env.example` documents them.
+- [ ] `docker compose up -d`; verify the tunnel; upload a stand-in file
+      end-to-end through the public URL.
+- [ ] Retention cron (delete audio > N days), backup cron, `/healthz` +
+      free uptime monitor that emails you.
+- [ ] Unattended OS security updates on the VPS.
 
-### Phase 4 — Hand-off to Mom (½ day, plus one sitting with her)
+### Phase 4 — Real samples and hand-off (½ day + one sitting with Mom)
 
-- [ ] Log her in on her phone and laptop; save the password in her browser.
-- [ ] Add the PWA icon to her phone home screen.
-- [ ] One-page printed guide in Spanish with screenshots: cómo subir, cómo
-      esperar, cómo copiar/descargar. Keep it to five steps.
-- [ ] Watch her do it once end-to-end without help. Fix whatever confused her
-      before adding any features.
+- [ ] Run the first real hearing recordings. Compare against the stand-ins:
+      audio quality, number of speakers, vocabulary. Tune `initial_prompt`
+      and the min/max speaker defaults.
+- [ ] Log her in on her laptop; save the password in her browser; bookmark.
+- [ ] One-page printed guide in Spanish with screenshots (`docs/guia.md`):
+      subir, esperar, renombrar hablantes, descargar Word. Five steps max.
+- [ ] Watch her do one hearing end-to-end without help. Fix what confused her
+      before adding features.
 
-### Phase 5 — Optional improvements (only if she asks)
+### Phase 5 — Later, only if she asks
 
-- Speaker labels ("Persona 1 / Persona 2") via WhisperX + pyannote (requires a
-  free Hugging Face token to accept the pyannote license).
-- Email her when a long transcript finishes.
-- Automatic summary / bullet points via an LLM, shown above the full text.
-- Shareable read-only link for a single transcript (expiring token).
-- Record directly in the browser (MediaRecorder) instead of uploading a file.
 - Search across all transcripts.
+- Per-case folders and a "same speakers as last hearing" hint.
+- Email when a long transcript finishes.
+- Summary / key points (requires an explicit decision on sending court text
+  to an external LLM, or running a local one on Modal).
+- Record directly in the browser.
+- Export with line numbers / legal transcript formatting if she needs a
+  specific layout.
 
 ---
 
-## 5. Repository layout (target)
+## 7. Repository layout (target)
 
 ```
 transcripciones/
@@ -213,60 +291,67 @@ transcripciones/
 ├── README.md                 # setup + deploy instructions (for you)
 ├── docker-compose.yml
 ├── .env.example
-├── docker/
-│   ├── Dockerfile.cpu
-│   └── Dockerfile.cuda
+├── Dockerfile                # web + worker image (CPU only, no models)
+├── modal_app.py              # GPU function: WhisperX + pyannote
 ├── app/
-│   ├── main.py               # FastAPI app, routes
+│   ├── main.py               # FastAPI routes
 │   ├── auth.py               # login, sessions, rate limit
 │   ├── db.py                 # SQLite schema + helpers
-│   ├── worker.py             # job loop, runs Transcriber
+│   ├── uploads.py            # chunked upload handling
+│   ├── worker.py             # job loop: spawn on Modal, poll, store
 │   ├── templates/            # Jinja2, Spanish copy
-│   └── static/               # CSS, htmx.min.js, PWA manifest
+│   └── static/               # CSS, htmx.min.js, player JS
 ├── transcribe/
-│   ├── __init__.py           # Transcriber interface
-│   ├── local_faster_whisper.py
-│   ├── remote_modal.py       # only if path C
+│   ├── __init__.py           # Transcriber interface + Transcript dataclasses
+│   ├── whisperx_pipeline.py  # runs inside Modal
+│   ├── local_cpu.py          # small-model dev path
 │   ├── audio.py              # ffmpeg normalization
-│   ├── paragraphs.py         # segments → readable paragraphs
+│   ├── turns.py              # segments → speaker turns; rename/merge
 │   └── export.py             # txt / srt / docx
-├── modal_app.py              # only if path C
 ├── tests/
 ├── scripts/
 │   ├── hash_password.py
+│   ├── retention.sh
 │   └── backup.sh
+├── samples/                  # git-ignored stand-in audio
 └── docs/
-    └── guia-para-mama.md     # the one-page Spanish guide
+    └── guia.md               # the one-page Spanish guide for Mom
 ```
 
 ---
 
-## 6. Rough cost
+## 8. Rough monthly cost
 
-| Item | Path A (home GPU) | Path B (CPU VPS) | Path C (VPS + Modal) |
-|---|---|---|---|
-| Domain | ~$10/yr | ~$10/yr | ~$10/yr |
-| Cloudflare (tunnel, DNS, HTTPS) | $0 | $0 | $0 |
-| Compute | electricity | ~€8–15/mo | ~€5/mo + GPU seconds (often within free credit) |
-| Backups (B2) | <$1/mo | <$1/mo | <$1/mo |
-
----
-
-## 7. Open questions to answer in phase 0
-
-1. What are the recordings? (voice notes, interviews, classes, sermons…)
-   Typical length? How many per week?
-2. Does she need to know *who* said what? → decides whether phase 5
-   diarization is really phase 2.
-3. What hardware do you have at home that can stay on 24/7? → decides A/B/C.
-4. Which domain will this live under?
-5. Where do the audio files come from — WhatsApp on her phone, a recorder app,
-   a laptop? → decides whether phone-first upload matters most.
+| Item | Cost |
+|---|---|
+| Domain | ~$10/yr |
+| Cloudflare tunnel, DNS, HTTPS | $0 |
+| VPS (Hetzner CX22-class) | ~€4–8 |
+| Modal GPU | ~$0.20–0.40 per 3-hour hearing; free credit likely covers it |
+| Backups (B2/R2) | <$1 |
 
 ---
 
-## 8. Suggested order of work for the next session
+## 9. Open questions
 
-1. Answer the phase 0 questions; get two sample files.
-2. Build phase 1 as a CLI and run it on the samples.
-3. Only then start the web app.
+1. **Which country's courts?** Drives legal vocabulary in the prompt and the
+   speaker role names offered as rename suggestions (Juez / Jueza, Fiscal,
+   Letrado vs. Licenciado, Ministerio Público vs. Fiscalía, …).
+2. **Typical length and how many per week?** Confirms the VPS size and
+   whether Modal's free credit covers it.
+3. **What recording device / format?** A courtroom system export, a phone on
+   the table, a handheld recorder? Affects audio quality expectations and
+   whether stereo channels carry different mics (worth exploiting if so).
+4. **Does she need a specific transcript layout** for her work (line numbers,
+   Q/A format, header block)? Decides the `.docx` template in phase 2 vs. 5.
+5. **Who else may see these transcripts?** If anyone besides her, we add a
+   second account and per-transcript sharing; otherwise single-user stays.
+
+---
+
+## 10. Next session
+
+1. Phase 0 accounts (Modal, Hugging Face, VPS, Cloudflare) — you do these.
+2. I start phase 1: the Modal function, the `transcribe` package, exporters,
+   and tests, using public Spanish audio as stand-in.
+3. When real samples arrive, we run them before touching the web app.
