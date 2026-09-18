@@ -3,25 +3,29 @@
   python -m transcribe samples/x.m4a --local            # CPU, small model, no speakers
   python -m transcribe samples/x.m4a --modal            # GPU on Modal (after `modal deploy modal_app.py`)
   python -m transcribe samples/x.m4a --local --slice 0:120   # first 2 minutes only
+  python -m transcribe --from-json out/x.json               # re-export txt/srt/docx from a saved result
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import tempfile
 from pathlib import Path
 
+from . import Transcript
 from .audio import normalize, probe, slice_audio
 from .export import write_all
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="transcribe")
-    ap.add_argument("audio", type=Path)
+    ap.add_argument("audio", type=Path, nargs="?")
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--local", action="store_true", help="CPU faster-whisper, no diarization")
     mode.add_argument("--modal", action="store_true", help="run on Modal GPU (deployed app)")
+    mode.add_argument("--from-json", type=Path, metavar="JSON", help="re-export a saved result")
     ap.add_argument("--model", default="small", help="local model size (default: small)")
     ap.add_argument("--slice", metavar="START:SECONDS", help="only transcribe a slice, e.g. 0:120")
     ap.add_argument("--out", type=Path, default=Path("out"))
@@ -29,7 +33,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-speakers", type=int)
     args = ap.parse_args(argv)
 
+    if args.from_json:
+        transcript = Transcript.from_dict(json.loads(args.from_json.read_text(encoding="utf-8")))
+        stem = args.from_json.stem
+        paths = write_all(transcript, args.out, stem, title=stem)
+        print(f"segments: {len(transcript.segments)}  speakers: {transcript.speakers()}")
+        for k, p in paths.items():
+            print(f"  {k}: {p}")
+        return 0
+
     src = args.audio
+    if src is None:
+        ap.error("audio file required unless --from-json is given")
     if not src.exists():
         print(f"no such file: {src}", file=sys.stderr)
         return 2

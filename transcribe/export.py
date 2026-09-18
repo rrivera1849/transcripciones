@@ -104,5 +104,11 @@ def write_all(transcript: Transcript, out_dir: str | Path, stem: str, names=None
     paths["json"].write_text(json.dumps(transcript.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
     paths["txt"].write_text(to_txt(transcript, names, title), encoding="utf-8")
     paths["srt"].write_text(to_srt(transcript, names), encoding="utf-8")
-    to_docx(transcript, paths["docx"], names, title=title or stem)
+    try:
+        to_docx(transcript, paths["docx"], names, title=title or stem)
+    except ImportError:
+        # python-docx missing (e.g. `modal run` from a Python without it). The
+        # JSON is saved; regenerate with: python -m transcribe --from-json <json>
+        print(f"warning: python-docx not installed, skipped {paths['docx'].name}")
+        del paths["docx"]
     return paths

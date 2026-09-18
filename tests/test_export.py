@@ -44,3 +44,19 @@ def test_write_all_roundtrip(tmp_path):
     assert set(paths) == {"json", "txt", "srt", "docx"}
     back = Transcript.from_dict(json.loads(paths["json"].read_text(encoding="utf-8")))
     assert len(back.segments) == 8 and back.duration == 30.0
+
+
+def test_write_all_skips_docx_when_python_docx_missing(tmp_path, monkeypatch, capsys):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "docx", None)  # makes `import docx` raise ImportError
+    paths = write_all(load(), tmp_path, "x", title="X")
+    assert set(paths) == {"json", "txt", "srt"}
+    assert "python-docx not installed" in capsys.readouterr().out
+
+
+def test_cli_from_json(tmp_path):
+    from transcribe.__main__ import main
+
+    assert main(["--from-json", str(FIX), "--out", str(tmp_path)]) == 0
+    assert (tmp_path / "sample.docx").exists() and (tmp_path / "sample.txt").exists()

@@ -14,6 +14,9 @@ uv run pytest
 modal deploy modal_app.py
 modal run modal_app.py --file samples/hearing.m4a --out out/
 
+# Re-export txt/srt/docx from a saved result without re-running the GPU
+uv run python -m transcribe --from-json out/hearing.json --out out/
+
 # Or, after deploying, via the CLI
 uv run python -m transcribe samples/hearing.m4a --modal --out out/
 
