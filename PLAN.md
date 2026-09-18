@@ -18,6 +18,10 @@ protected by a login and reachable from anywhere on the internet.
 | Speaker labels | **Wanted** | Diarization is core scope, not a stretch goal. |
 | Source of files | Laptop | Desktop-first UI; large uploads must be reliable; phone support is nice-to-have. |
 | Sample audio | None yet, coming soon | Build against public stand-in audio; re-tune when real samples arrive. |
+| Jurisdiction | **Puerto Rico** courts | Puerto Rican legal Spanish in the prompt and role names; expect some English code-switching. |
+| Recording device | Unknown | Accept anything; downmix to mono by default; revisit if the real files turn out to be multi-channel. |
+| Transcript layout | None required yet | Ship a clean default `.docx`; a specific legal layout waits for a real request. |
+| Who sees transcripts | Mom + possibly one other person | Two accounts sharing one workspace; no per-transcript permissions. |
 
 ---
 
@@ -27,7 +31,7 @@ protected by a login and reachable from anywhere on the internet.
 
 - One user (Mom) uploads a hearing recording and gets back a transcript with
   timestamps and speaker labels ("Hablante 1", "Hablante 2", …) that she can
-  rename to "Juez", "Fiscal", "Testigo", etc.
+  rename to "Jueza", "Fiscal", "Lcdo. de la defensa", "Testigo", etc.
 - Spanish-only, high accuracy, good punctuation, correct legal terms.
 - Zero technical steps for her: open a link, log in once, drag a file, wait,
   read / copy / download a Word document.
@@ -37,7 +41,8 @@ protected by a login and reachable from anywhere on the internet.
 
 **Non-goals (v1)**
 
-- Multiple accounts, public sign-up, billing.
+- Public sign-up, billing, per-transcript permissions. (Two fixed accounts
+  sharing one workspace are in scope; see §5.)
 - Real-time / live transcription during the hearing.
 - Automatic identification of *who* a speaker is by name (she renames them).
 - Certified / legally admissible transcripts. This is a working aid; the
@@ -102,9 +107,11 @@ asr_options = {
     "beam_size": 5,
     "condition_on_previous_text": False,   # avoid repeated-phrase loops on long files
     "initial_prompt": (
-        "Transcripción de una vista judicial en español. "
-        "Intervienen el juez, la fiscal, el abogado defensor, el acusado y los testigos. "
-        "Señoría, con la venia, letrado, sentencia, prueba testifical, acusación, defensa."
+        "Vista en el Tribunal de Primera Instancia de Puerto Rico. "
+        "Intervienen la Honorable Jueza, el Fiscal del Ministerio Público, "
+        "el Licenciado de la defensa, el acusado, los testigos, el perito y el alguacil. "
+        "Con la venia del Tribunal. Objeción. Ha lugar. No ha lugar. "
+        "Se declara con lugar la moción. Que conste en récord."
     ),
 }
 language = "es"        # never auto-detect
@@ -112,9 +119,29 @@ vad = True             # skip silence, fewer hallucinations
 min_speakers / max_speakers = None  # let pyannote decide; expose as an optional field later
 ```
 
-The `initial_prompt` is our "custom vocabulary". It will be tuned per
-jurisdiction once we know which country's courts these are (Spanish legal
-vocabulary differs between Spain, Puerto Rico, Mexico, …). See open questions.
+The `initial_prompt` is our "custom vocabulary", written in Puerto Rican
+legal Spanish: *Licenciado/a* rather than *letrado*, *Ministerio Público* and
+*Fiscalía*, *Tribunal de Primera Instancia*, *Ha lugar / No ha lugar*,
+*alguacil*, *récord*. It also nudges the model toward the formal register and
+frequent short exchanges ("Objeción." "Ha lugar.") typical of a hearing.
+
+**Puerto Rico specifics to watch on real samples**
+
+- Code-switching: English words and phrases ("el discovery", "hearsay",
+  "probable cause") appear in PR court speech. With `language="es"` fixed,
+  Whisper usually keeps them as English words, but it sometimes translates
+  or garbles them. We keep `language="es"` (auto-detect is worse) and check
+  the first real transcripts for this specifically.
+- Names and case numbers: Whisper spells Spanish surnames well but can drop
+  accents. The inline editor covers the rest.
+- Suggested speaker roles offered in the rename menu: Juez / Jueza, Fiscal,
+  Lcdo. / Lcda. de la defensa, Acusado / Acusada, Testigo, Perito, Alguacil,
+  Intérprete, Secretaria. Free text is always allowed.
+
+**Recording device is unknown.** The pipeline downmixes everything to 16 kHz
+mono. If the real files turn out to be multi-channel with one mic per party
+(some courtroom systems do this), we split channels and diarize per channel
+instead, which is far more accurate. This is a phase 4 check.
 
 **Modal specifics**
 
@@ -142,10 +169,18 @@ vocabulary differs between Spain, Puerto Rico, Mexico, …). See open questions.
 SQLite (also used as the job queue), one background worker process, Docker
 Compose with `web`, `worker`, `cloudflared`.
 
-**Auth:** single username + bcrypt password from `.env`; signed session cookie
-lasting 90 days; login rate-limited (5 failures → 15-minute lockout).
-Cloudflare Tunnel provides HTTPS and hides the VPS. Cloudflare Access is
-optional and skipped by default to keep her experience simple.
+**Auth:** a `users` table with up to a handful of accounts (Mom, and one other
+person), each with their own username and bcrypt password; created by you
+with `scripts/add_user.py`, no sign-up page. Everyone sees the same shared
+list of hearings (one workspace); each hearing records who uploaded it and
+who last edited it. Signed session cookie lasting 90 days; login rate-limited
+(5 failures → 15-minute lockout). Cloudflare Tunnel provides HTTPS and hides
+the VPS. Cloudflare Access is optional and skipped by default to keep her
+experience simple.
+
+Sharing one workspace is deliberately simpler than per-transcript permissions.
+If the second person should only see *some* hearings, that becomes a phase 5
+item ("compartir con…").
 
 **Pages (all copy in Spanish):**
 
@@ -176,7 +211,9 @@ optional and skipped by default to keep her experience simple.
 
 - `.docx` — the primary deliverable: title block (name, date, duration),
   then one paragraph per turn with bold speaker name and grey timestamp.
-  Built with `python-docx`.
+  Built with `python-docx`. No specific legal layout is required yet, so this
+  clean default ships in phase 2; a formal transcript layout (numbered lines,
+  caption header, certification page) is a phase 5 item if she asks.
 - `.txt` — same content, plain.
 - `.srt` — subtitles with speaker prefix, useful for playing alongside video.
 
@@ -210,10 +247,12 @@ optional and skipped by default to keep her experience simple.
       create a read token; store it as a Modal secret.
 - [ ] VPS (Hetzner CX22 or similar, Ubuntu 24.04, Docker installed).
 - [ ] Domain in Cloudflare; create a tunnel, note the token.
-- [ ] Stand-in audio until real samples arrive: a long public Spanish
-      multi-speaker recording (a parliamentary session or a public court
-      broadcast works well — several speakers, formal register, room mics).
-      Keep 2–3 files of 20–60 min in `samples/` (git-ignored).
+- [ ] Stand-in audio until real samples arrive: a long public Puerto Rican
+      multi-speaker recording in a formal register — e.g. a Legislatura de
+      Puerto Rico session or a Tribunal Supremo de PR oral argument, both
+      published online. Several speakers, room mics, and the same accent and
+      code-switching we expect. Keep 2–3 files of 20–60 min in `samples/`
+      (git-ignored).
 
 ### Phase 1 — Modal transcription function (1 day)
 
@@ -237,7 +276,8 @@ readable, correctly-punctuated Spanish and plausible speaker turns.
 
 ### Phase 2 — Web app (2–3 days)
 
-- [ ] FastAPI app: login/logout, sessions, rate limiting, CSRF on forms.
+- [ ] FastAPI app: `users` table, login/logout, sessions, rate limiting,
+      CSRF on forms.
 - [ ] Chunked upload endpoint; `jobs` table; signed download URL endpoint.
 - [ ] Worker: claim job → `spawn` on Modal → poll → store result; resilient to
       restarts (re-attach to in-flight Modal calls on boot).
@@ -250,10 +290,11 @@ readable, correctly-punctuated Spanish and plausible speaker turns.
 
 ### Phase 3 — Deploy (½ day)
 
-- [ ] `.env` on the VPS: `APP_USERNAME`, `APP_PASSWORD_HASH`, `SECRET_KEY`,
+- [ ] `.env` on the VPS: `SECRET_KEY`,
       `MODAL_TOKEN_ID/SECRET`, `TUNNEL_TOKEN`, `PUBLIC_BASE_URL`,
       `RETENTION_DAYS`. Never committed; `.env.example` documents them.
-- [ ] `docker compose up -d`; verify the tunnel; upload a stand-in file
+- [ ] `docker compose up -d`; create the two accounts with
+      `scripts/add_user.py`; verify the tunnel; upload a stand-in file
       end-to-end through the public URL.
 - [ ] Retention cron (delete audio > N days), backup cron, `/healthz` +
       free uptime monitor that emails you.
@@ -262,9 +303,11 @@ readable, correctly-punctuated Spanish and plausible speaker turns.
 ### Phase 4 — Real samples and hand-off (½ day + one sitting with Mom)
 
 - [ ] Run the first real hearing recordings. Compare against the stand-ins:
-      audio quality, number of speakers, vocabulary. Tune `initial_prompt`
-      and the min/max speaker defaults.
+      audio quality, mono vs. multi-channel, number of speakers, vocabulary,
+      how English code-switching came out. Tune `initial_prompt` and the
+      min/max speaker defaults.
 - [ ] Log her in on her laptop; save the password in her browser; bookmark.
+      Same for the second person, if they need access from day one.
 - [ ] One-page printed guide in Spanish with screenshots (`docs/guia.md`):
       subir, esperar, renombrar hablantes, descargar Word. Five steps max.
 - [ ] Watch her do one hearing end-to-end without help. Fix what confused her
@@ -310,7 +353,7 @@ transcripciones/
 │   └── export.py             # txt / srt / docx
 ├── tests/
 ├── scripts/
-│   ├── hash_password.py
+│   ├── add_user.py
 │   ├── retention.sh
 │   └── backup.sh
 ├── samples/                  # git-ignored stand-in audio
@@ -334,18 +377,18 @@ transcripciones/
 
 ## 9. Open questions
 
-1. **Which country's courts?** Drives legal vocabulary in the prompt and the
-   speaker role names offered as rename suggestions (Juez / Jueza, Fiscal,
-   Letrado vs. Licenciado, Ministerio Público vs. Fiscalía, …).
-2. **Typical length and how many per week?** Confirms the VPS size and
+1. **Typical length and how many per week?** Confirms the VPS size and
    whether Modal's free credit covers it.
-3. **What recording device / format?** A courtroom system export, a phone on
-   the table, a handheld recorder? Affects audio quality expectations and
-   whether stereo channels carry different mics (worth exploiting if so).
-4. **Does she need a specific transcript layout** for her work (line numbers,
-   Q/A format, header block)? Decides the `.docx` template in phase 2 vs. 5.
-5. **Who else may see these transcripts?** If anyone besides her, we add a
-   second account and per-transcript sharing; otherwise single-user stays.
+2. **Recording device / format** — still unknown. Resolved when the first
+   real file arrives (phase 4); the pipeline handles either case.
+3. **Does the second person need access from day one**, and should they see
+   everything or only selected hearings? Default: everything, shared
+   workspace.
+4. **Transcript layout** — none required now. Revisit only if she asks for a
+   formal court-transcript format.
+
+Answered so far: Puerto Rico courts; files come from a laptop; speaker labels
+required; hosting is VPS + Modal.
 
 ---
 
