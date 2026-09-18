@@ -39,16 +39,20 @@ def _download_models() -> None:
     os.environ.setdefault("HF_HOME", MODEL_DIR)
     download_model(WHISPER_MODEL)  # lands in HF_HOME, where whisperx looks at runtime
     whisperx.load_align_model(language_code="es", device="cpu")
+    whisperx.load_model(WHISPER_MODEL, "cpu", compute_type="int8", language="es",
+                        use_auth_token=os.environ["HF_TOKEN"])  # also fetches the VAD model
     from whisperx.diarize import DiarizationPipeline
 
-    DiarizationPipeline(use_auth_token=os.environ["HF_TOKEN"], device="cpu")
+    DiarizationPipeline(model_name="pyannote/speaker-diarization-3.1",
+                        token=os.environ["HF_TOKEN"], device="cpu")
 
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("ffmpeg", "git")
     .pip_install(
-        "whisperx==3.4.2",
+        "whisperx==3.8.6",  # pyannote.audio 4.x, torch 2.8
+        "omegaconf>=2.3",  # pyannote checkpoints unpickle an omegaconf config
         "python-docx>=1.1",
     )
     .env({"HF_HOME": MODEL_DIR, "TOKENIZERS_PARALLELISM": "false"})

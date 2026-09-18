@@ -35,12 +35,14 @@ def load_models(hf_token: str | None = None) -> None:
 
     device = _device()
     compute = "float16" if device == "cuda" else "int8"
+    token = hf_token or os.environ.get("HF_TOKEN")
     if _asr is None:
         _asr = whisperx.load_model(
             WHISPER_MODEL,
             device,
             compute_type=compute,
             language=LANGUAGE,
+            use_auth_token=token,  # pyannote VAD model is gated
             asr_options={
                 "beam_size": 5,
                 "initial_prompt": INITIAL_PROMPT,
@@ -53,10 +55,9 @@ def load_models(hf_token: str | None = None) -> None:
     if _align is None:
         _align = whisperx.load_align_model(language_code=LANGUAGE, device=device)
     if _diarize is None:
-        token = hf_token or os.environ.get("HF_TOKEN")
         from whisperx.diarize import DiarizationPipeline
 
-        _diarize = DiarizationPipeline(model_name=DIARIZE_MODEL, use_auth_token=token, device=device)
+        _diarize = DiarizationPipeline(model_name=DIARIZE_MODEL, token=token, device=device)
 
 
 def transcribe_file(
