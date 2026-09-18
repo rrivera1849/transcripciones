@@ -169,26 +169,21 @@ Two things, both in claude.ai/code → Environments → your environment:
 | `MODAL_TOKEN_SECRET` | the `as-…` from step 2.3 |
 | `HF_TOKEN` | the `hf_…` from step 1.3 |
 
-**b. Network access.** The default policy blocks Modal and Hugging Face, so
-Claude cannot deploy or run the GPU job. Either set network access to
-**Full**, or keep it **Limited** and add these hosts to the allowlist:
+**b. Network access.** Set the environment's network access to **Full** (or
+allow `huggingface.co`, `cdn-lfs.huggingface.co`, `hf.co`). This lets Claude
+download models and validate the pipeline on CPU inside a session.
 
-```
-modal.com
-api.modal.com
-modal-images.com
-huggingface.co
-cdn-lfs.huggingface.co
-cdn-lfs-us-1.huggingface.co
-hf.co
-youtube.com          # only if you want Claude to pull stand-in audio itself
-```
+**Known limit:** the Claude Code remote environment routes traffic through
+an HTTPS proxy that does not support gRPC, and the Modal client is gRPC-only.
+So `modal deploy` / `modal run` cannot be executed from a Claude session
+regardless of the network policy. Modal commands run from **your laptop**;
+Claude writes and validates the code, you run the two commands below and
+paste the output back.
 
-Both changes apply to **new** sessions only: start a fresh session after
-saving them. Docs: https://code.claude.com/docs/en/claude-code-on-the-web
+Both changes apply to **new** sessions only.
+Docs: https://code.claude.com/docs/en/claude-code-on-the-web
 
-**Alternative: run Modal from your laptop instead.** If you'd rather not open
-the environment's network, everything works from the repo checkout:
+**Running Modal from your laptop** (the normal path):
 
 ```bash
 uv sync --group dev
@@ -199,8 +194,8 @@ modal run modal_app.py --file samples/x.m4a --out out/
 and paste the printed timing line plus a few lines of `out/x.txt` back to
 Claude.
 
-- [ ] Env vars set and network opened, then a new session started
-      — or — running Modal from the laptop
+- [ ] Env vars set and network opened, new session started
+- [ ] Modal CLI logged in on the laptop (`modal setup`)
 
 ## 7. Later, not now
 
