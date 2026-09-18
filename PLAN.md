@@ -22,6 +22,7 @@ protected by a login and reachable from anywhere on the internet.
 | Recording device | Unknown | Accept anything; downmix to mono by default; revisit if the real files turn out to be multi-channel. |
 | Transcript layout | None required yet | Ship a clean default `.docx`; a specific legal layout waits for a real request. |
 | Who sees transcripts | Mom + possibly one other person | Two accounts sharing one workspace; no per-transcript permissions. |
+| Build order | **Local first** | The app runs on a laptop at localhost with Modal doing the GPU work. VPS, domain and Cloudflare come only in phase 3. |
 
 ---
 
@@ -53,36 +54,42 @@ protected by a login and reachable from anywhere on the internet.
 ## 3. Architecture
 
 ```
- Mom's laptop                 VPS (Hetzner CX22-class, ~€4–8/mo)                 Modal (GPU, pay per second)
- ┌──────────┐   HTTPS   ┌─────────────────────────────────────┐              ┌──────────────────────────┐
- │ Browser  │ ────────► │ cloudflared ─► web (FastAPI+HTMX)   │              │ transcribe_hearing()     │
- │ upload   │           │                 │  SQLite + data/   │  spawn job   │  ffmpeg normalize        │
- │ 2 GB ok  │           │              worker ────────────────┼────────────► │  WhisperX large-v3 (es)  │
- └──────────┘           │                 ▲   signed URL      │              │  wav2vec2 es alignment   │
-                        │                 │◄──────────────────┼── fetch ─────│  pyannote 3.1 diarize    │
-                        │                 │   poll result     │              │  → JSON segments         │
-                        └─────────────────┴───────────────────┘              └──────────────────────────┘
+ Browser                      App host (laptop now, VPS later)                 Modal (GPU, pay per second)
+ ┌──────────┐   HTTP(S)  ┌─────────────────────────────────────┐              ┌──────────────────────────┐
+ │ upload   │ ─────────► │ web (FastAPI+HTMX)                  │              │ transcribe_hearing()     │
+ │ 2 GB ok  │            │   │  SQLite + data/                 │  1. put file │  reads from Volume       │
+ └──────────┘            │ worker ─────────────────────────────┼────────────► │  ffmpeg normalize        │
+                         │   │         Modal Volume "audio-in" │  2. spawn    │  WhisperX large-v3 (es)  │
+                         │   │◄────────────────────────────────┼── 3. result ─│  wav2vec2 es alignment   │
+                         │   │         poll                    │              │  pyannote 3.1 diarize    │
+                         └───┴─────────────────────────────────┘              │  → JSON, deletes input   │
+                                                                              └──────────────────────────┘
+ In phase 3 the same stack moves to a VPS and a `cloudflared` container is
+ added in front of `web`. Nothing else changes.
 ```
 
 **Flow for one file**
 
-1. Browser uploads in chunks to the VPS (`/upload`), which stores the file
-   under `data/audio/{job_id}/` and inserts a `jobs` row (`queued`).
-2. The worker picks up the job, mints a one-time signed download URL for the
-   file, and calls `transcribe_hearing.spawn(url, options)` on Modal. It
-   stores the Modal call id and marks the job `running`.
-3. The Modal function downloads the audio, normalizes it with ffmpeg, runs
-   WhisperX (transcribe → align → diarize) and returns JSON: segments with
-   start, end, text, speaker, and word timings. It keeps nothing after return.
+1. Browser uploads in chunks (`/upload`); the app stores the file under
+   `data/audio/{job_id}/` and inserts a `jobs` row (`queued`).
+2. The worker picks up the job and streams the file into a Modal **Volume**
+   (`audio-in`) under `{job_id}/input.<ext>`, then calls
+   `transcribe_hearing.spawn(job_id, options)`. It stores the Modal call id
+   and marks the job `running`.
+3. The Modal function reads the file from the mounted volume, normalizes it
+   with ffmpeg, runs WhisperX (transcribe → align → diarize), deletes its
+   input from the volume, and returns JSON: segments with start, end, text,
+   speaker, and word timings.
 4. The worker polls the call id every 30 s, writes the result into
    `transcripts`, groups segments into speaker turns, and marks the job `done`
    (or `error` with a readable message).
-5. Mom's page polls every 5 s via HTMX and flips to "Listo".
+5. The page polls every 5 s via HTMX and flips to "Listo".
 
-Why signed URL instead of passing bytes: hearing files can be multi-GB, and a
-URL keeps the VPS as the only place the raw audio is stored. Why `spawn` +
-poll instead of a blocking call: a 3-hour hearing can take 15–30 minutes;
-the worker must survive restarts and never hold an HTTP connection that long.
+Why a Volume instead of a signed URL: it works identically from a laptop on
+localhost and from a VPS, never requires an inbound endpoint, and has no
+request-size ceiling for multi-GB hearings. Why `spawn` + poll instead of a
+blocking call: a 3-hour hearing can take 15–30 minutes; the worker must
+survive restarts and never hold an HTTP connection that long.
 
 ---
 
@@ -166,17 +173,18 @@ instead, which is far more accurate. This is a phase 4 check.
 ## 5. Web app
 
 **Stack:** Python 3.12, FastAPI, Jinja2 + HTMX (server-rendered, minimal JS),
-SQLite (also used as the job queue), one background worker process, Docker
-Compose with `web`, `worker`, `cloudflared`.
+SQLite (also used as the job queue), one background worker process. Runs
+locally with `uv run` / `uvicorn` on `localhost:8000`; Docker Compose
+(`web`, `worker`, and in phase 3 `cloudflared`) for deployment.
 
 **Auth:** a `users` table with up to a handful of accounts (Mom, and one other
 person), each with their own username and bcrypt password; created by you
 with `scripts/add_user.py`, no sign-up page. Everyone sees the same shared
 list of hearings (one workspace); each hearing records who uploaded it and
 who last edited it. Signed session cookie lasting 90 days; login rate-limited
-(5 failures → 15-minute lockout). Cloudflare Tunnel provides HTTPS and hides
-the VPS. Cloudflare Access is optional and skipped by default to keep her
-experience simple.
+(5 failures → 15-minute lockout). In phase 3 Cloudflare Tunnel provides
+HTTPS and hides the VPS. Cloudflare Access is optional and skipped by default
+to keep her experience simple.
 
 Sharing one workspace is deliberately simpler than per-transcript permissions.
 If the second person should only see *some* hearings, that becomes a phase 5
@@ -228,8 +236,9 @@ item ("compartir con…").
 
 - Audio deleted from the VPS 30 days after transcription (configurable);
   transcripts kept until she deletes them.
-- Modal keeps nothing after the function returns; the signed URL expires in
-  6 hours and is single-use.
+- Modal keeps nothing after the function returns: the input is deleted from
+  the volume at the end of the run, and a daily sweep removes anything older
+  than 24 h in case a run crashed.
 - Nightly encrypted backup of `data/` (SQLite + transcripts, not audio) with
   `restic` to Backblaze B2 or Cloudflare R2.
 - No third-party LLM summaries in v1. If we add summaries later, we decide
@@ -239,25 +248,26 @@ item ("compartir con…").
 
 ## 6. Phases
 
-### Phase 0 — Set up accounts and a stand-in dataset (½ day)
+### Phase 0 — Accounts and a stand-in dataset (½ day)
 
-- [ ] Modal account; install CLI; `modal token new`.
+Local-first: only Modal and Hugging Face are needed to start. See
+`docs/SETUP.md` for click-by-click steps.
+
+- [ ] Modal account; install CLI; `modal setup`; billing method on file.
 - [ ] Hugging Face account; accept licenses for
       `pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`;
-      create a read token; store it as a Modal secret.
-- [ ] VPS (Hetzner CX22 or similar, Ubuntu 24.04, Docker installed).
-- [ ] Domain in Cloudflare; create a tunnel, note the token.
-- [ ] Stand-in audio until real samples arrive: a long public Puerto Rican
-      multi-speaker recording in a formal register — e.g. a Legislatura de
-      Puerto Rico session or a Tribunal Supremo de PR oral argument, both
-      published online. Several speakers, room mics, and the same accent and
-      code-switching we expect. Keep 2–3 files of 20–60 min in `samples/`
-      (git-ignored).
+      create a read token; store it as the Modal secret `huggingface`.
+- [ ] Stand-in audio until real samples arrive: 2–3 public Puerto Rican
+      multi-speaker recordings in a formal register (Legislatura de Puerto
+      Rico sessions, Tribunal Supremo de PR oral arguments), 20–60 min each,
+      kept in `samples/` (git-ignored).
+- [ ] (Deferred to phase 3) VPS, domain, Cloudflare tunnel.
 
 ### Phase 1 — Modal transcription function (1 day)
 
 - [ ] `modal_app.py`: image with ffmpeg, WhisperX, pyannote, weights
-      pre-downloaded; `transcribe_hearing(url, options) -> dict`.
+      pre-downloaded; Volume `audio-in`; `transcribe_hearing(job_id, options)
+      -> dict`; daily sweep of stale inputs.
 - [ ] `transcribe/` package (shared, runs inside Modal and in tests):
       normalization, post-processing into speaker turns, exporters
       (`txt`, `srt`, `docx`).
@@ -278,18 +288,28 @@ readable, correctly-punctuated Spanish and plausible speaker turns.
 
 - [ ] FastAPI app: `users` table, login/logout, sessions, rate limiting,
       CSRF on forms.
-- [ ] Chunked upload endpoint; `jobs` table; signed download URL endpoint.
-- [ ] Worker: claim job → `spawn` on Modal → poll → store result; resilient to
-      restarts (re-attach to in-flight Modal calls on boot).
+- [ ] Chunked upload endpoint; `jobs` table.
+- [ ] Worker: claim job → upload to Volume → `spawn` on Modal → poll → store
+      result; resilient to restarts (re-attach to in-flight Modal calls on
+      boot).
 - [ ] Home page, transcript page, speaker sidebar (rename, merge), inline
       edit, audio player with seek, exports.
 - [ ] HTMX polling for status; Spanish copy; layout checked at laptop width
       and at 375 px.
-- [ ] `docker-compose.yml` with `web`, `worker`, `cloudflared`; shared
-      `data/` volume; `restart: unless-stopped`.
+- [ ] Runs end-to-end on a laptop: `uv run app` at `localhost:8000`, Modal
+      doing the GPU work, transcripts stored in local `data/`.
+- [ ] `docker-compose.yml` with `web` and `worker`; shared `data/` volume;
+      `restart: unless-stopped`. `cloudflared` is added in phase 3.
+
+**Exit criterion:** you upload a stand-in file at `localhost:8000`, wait, and
+download a speaker-labelled `.docx`, all from your laptop.
 
 ### Phase 3 — Deploy (½ day)
 
+Now the infrastructure: VPS, domain, Cloudflare tunnel (`docs/SETUP.md`
+§3–4). The app code does not change; only `.env` and one Compose service.
+
+- [ ] Add the `cloudflared` service to `docker-compose.yml`.
 - [ ] `.env` on the VPS: `SECRET_KEY`,
       `MODAL_TOKEN_ID/SECRET`, `TUNNEL_TOKEN`, `PUBLIC_BASE_URL`,
       `RETENTION_DAYS`. Never committed; `.env.example` documents them.
@@ -394,7 +414,10 @@ required; hosting is VPS + Modal.
 
 ## 10. Next session
 
-1. Phase 0 accounts (Modal, Hugging Face, VPS, Cloudflare) — you do these.
-2. I start phase 1: the Modal function, the `transcribe` package, exporters,
-   and tests, using public Spanish audio as stand-in.
-3. When real samples arrive, we run them before touching the web app.
+1. Phase 0 (Modal, Hugging Face, stand-in audio links) — you.
+2. Phase 1 — Claude: the Modal function, the `transcribe` package,
+   exporters, tests; run on the stand-in audio and report timing, cost, and
+   quality.
+3. Phase 2 — the local web app. You use it on your laptop.
+4. Real samples arrive → run them, tune.
+5. Only then phase 3: VPS + Cloudflare.

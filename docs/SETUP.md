@@ -1,7 +1,8 @@
 # Setup checklist (your side)
 
-Everything here is done once, by you, before phase 1 starts. Estimated time:
-about an hour, most of it waiting for account approvals.
+We build local-first: the app runs on your laptop and only the GPU work goes
+to Modal. **To start phase 1 you need sections 1, 2, 5 and 6 only**, about
+30 minutes. Sections 3 and 4 (Cloudflare, VPS) are for phase 3 and can wait.
 
 **Never paste tokens or passwords into chat.** Where Claude needs a secret to
 test something, add it as an environment variable in the Claude Code
@@ -57,7 +58,7 @@ Environment variables). Everything else lives in the VPS `.env`.
 - [ ] Secret `huggingface` with key `HF_TOKEN` exists
 - [ ] Billing method on file
 
-## 3. Domain + Cloudflare — 15 min
+## 3. Domain + Cloudflare — 15 min — *phase 3, not needed yet*
 
 1. Create a free account at https://dash.cloudflare.com/sign-up.
 2. Domain: either
@@ -85,7 +86,7 @@ uploads in 5 MB chunks specifically so multi-GB hearings still work.
 - [ ] Tunnel created, `TUNNEL_TOKEN` saved → VPS `.env`
 - [ ] Public hostname `transcripciones.<domain>` → `http://web:8000`
 
-## 4. VPS — 20 min
+## 4. VPS — 20 min — *phase 3, not needed yet*
 
 Hetzner is the suggested provider; any Ubuntu VPS with Docker works.
 
@@ -119,6 +120,17 @@ Hetzner is the suggested provider; any Ubuntu VPS with Docker works.
 - [ ] Firewall allows only port 22
 - [ ] Docker + Compose installed
 - [ ] Unattended security updates enabled
+
+## 4b. Your laptop (for running the app locally) — 10 min
+
+1. Python 3.12+ and [`uv`](https://docs.astral.sh/uv/) (`pip install uv` or
+   the one-line installer on that page).
+2. `ffmpeg` on the PATH: macOS `brew install ffmpeg`; Windows
+   `winget install ffmpeg`; Ubuntu `sudo apt install ffmpeg`.
+3. Git, and a clone of this repo.
+
+- [ ] `uv --version`, `ffmpeg -version`, and `modal --version` all print
+      something.
 
 ## 5. Stand-in audio (until real hearings arrive) — 10 min
 
