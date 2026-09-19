@@ -334,7 +334,17 @@ the same client the CLI uses; to be confirmed on the laptop.
 ### Phase 3 — Deploy (½ day)
 
 Now the infrastructure: VPS, domain, Cloudflare tunnel (`docs/SETUP.md`
-§3–4). The app code does not change; only `.env` and one Compose service.
+§3–4, then `docs/DEPLOY.md`). The app code does not change; only `.env` and
+one Compose service.
+
+**Status 2026-09-19 (repo side done):** production `docker-compose.yml`
+(web with healthcheck, worker, cloudflared), uvicorn trusts the tunnel's
+forwarded headers so cookies are `Secure` and rate limiting keys on the real
+client IP, `scripts/deploy.sh`, `scripts/backup.sh` (nightly SQLite copy,
+optional rclone off-site), and the runbook. Verified here: compose config,
+the exact image install step, and the Secure-cookie behaviour. Not verified
+here: the Docker build itself (no daemon in this sandbox) — first `docker
+compose up --build` on the VPS is the test. Server side: yours.
 
 - [ ] Add the `cloudflared` service to `docker-compose.yml`.
 - [ ] `.env` on the VPS: `SECRET_KEY`,

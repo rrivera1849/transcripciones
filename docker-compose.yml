@@ -1,19 +1,33 @@
+# Production stack. `docker compose up -d --build` on the VPS.
+# Local development without Docker: `uv run python -m app` (see README).
 services:
   web:
     build: .
     restart: unless-stopped
     env_file: .env
     volumes: ["./data:/data"]
-    ports: ["127.0.0.1:8000:8000"]   # local only; phase 3 puts cloudflared in front
+    ports: ["127.0.0.1:8000:8000"]   # localhost only; the tunnel reaches it over the compose network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
   worker:
     build: .
     restart: unless-stopped
     env_file: .env
     volumes: ["./data:/data"]
     command: ["python", "-m", "app.worker"]
-  # phase 3:
-  # cloudflared:
-  #   image: cloudflare/cloudflared:latest
-  #   restart: unless-stopped
-  #   command: tunnel run
-  #   environment: { TUNNEL_TOKEN: "${TUNNEL_TOKEN}" }
+    depends_on: [web]
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN}"
+    depends_on: [web]
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }

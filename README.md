@@ -21,8 +21,9 @@ Set `TRANSCRIBER=local` (and optionally `LOCAL_MODEL=large-v3-turbo`) to
 transcribe on the laptop's CPU without Modal; that path has no speaker labels
 and is meant for development only.
 
-Docker: `docker compose up -d --build` runs `web` and `worker` with `data/`
-mounted. Phase 3 adds `cloudflared` and moves this to a VPS.
+Production (VPS + Cloudflare Tunnel): see `docs/DEPLOY.md`. In short:
+`.env` with the secrets, `docker compose up -d --build`, create users with
+`docker compose exec web python scripts/add_user.py <name>`.
 
 ## Quick start (phase 1: transcription only)
 

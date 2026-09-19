@@ -59,7 +59,7 @@ Environment variables). Everything else lives in the VPS `.env`.
 - [ ] Secret `huggingface` with key `HF_TOKEN` exists
 - [ ] Billing method on file
 
-## 3. Domain + Cloudflare — 15 min — *phase 3, not needed yet*
+## 3. Domain + Cloudflare — 15 min — *phase 3, needed now*
 
 1. Create a free account at https://dash.cloudflare.com/sign-up.
 2. Domain: either
@@ -87,7 +87,7 @@ uploads in 5 MB chunks specifically so multi-GB hearings still work.
 - [ ] Tunnel created, `TUNNEL_TOKEN` saved → VPS `.env`
 - [ ] Public hostname `transcripciones.<domain>` → `http://web:8000`
 
-## 4. VPS — 20 min — *phase 3, not needed yet*
+## 4. VPS — 20 min — *phase 3, needed now*
 
 Hetzner is the suggested provider; any Ubuntu VPS with Docker works.
 
@@ -115,7 +115,7 @@ Hetzner is the suggested provider; any Ubuntu VPS with Docker works.
    mkdir -p /opt/transcripciones
    ```
 
-4. Note the server IP. Nothing is deployed yet; that is phase 3.
+4. Note the server IP. Then follow `docs/DEPLOY.md` for the deployment itself.
 
 - [ ] Server running, SSH key login works
 - [ ] Firewall allows only port 22
