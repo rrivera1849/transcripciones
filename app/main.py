@@ -22,6 +22,7 @@ from transcribe.turns import (
     fmt_ts,
     group_turns,
     merge_speakers,
+    merge_turns,
     replace_turn_text,
     set_turn_speaker,
     speaker_names,
@@ -304,13 +305,15 @@ def _speaker_ctx(transcript: Transcript, overrides: dict) -> list[dict]:
 def _turns_ctx(transcript: Transcript, overrides: dict) -> dict:
     speakers = _speaker_ctx(transcript, overrides)
     by_id = {s["id"]: s for s in speakers}
+    grouped = group_turns(transcript.segments)
     turns = [
         {
             "i": i, "start": t.start, "end": t.end, "text": t.text, "speaker": t.speaker,
             "name": by_id[t.speaker]["name"] if t.speaker in by_id else "",
             "color": by_id[t.speaker]["color"] if t.speaker in by_id else "#666",
+            "can_merge_up": i > 0 and grouped[i - 1].speaker == t.speaker,
         }
-        for i, t in enumerate(group_turns(transcript.segments))
+        for i, t in enumerate(grouped)
     ]
     return {"turns": turns, "speakers": speakers}
 
@@ -371,6 +374,19 @@ def turn_text(request: Request, job_id: str, index: int,
         turns = group_turns(transcript.segments)
         if 0 <= index < len(turns) and text.strip():
             transcript.segments = replace_turn_text(transcript.segments, turns[index], text)
+            db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"])
+    return _turns_response(request, session, job_id)
+
+
+@app.post("/t/{job_id}/turn/{index}/merge-up", response_class=HTMLResponse)
+def turn_merge_up(request: Request, job_id: str, index: int,
+                  session: dict = Depends(current_session), csrf_token: str = Form(...)):
+    csrf_ok(request, session, csrf_token)
+    with db.connect() as conn:
+        _, transcript, _overrides = _load(conn, job_id, session)
+        turns = group_turns(transcript.segments)
+        if 1 <= index < len(turns) and turns[index - 1].speaker == turns[index].speaker:
+            transcript.segments = merge_turns(transcript.segments, turns[index - 1], turns[index])
             db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"])
     return _turns_response(request, session, job_id)
 

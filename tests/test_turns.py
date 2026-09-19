@@ -93,3 +93,21 @@ def test_pipeline_output_is_plain_python():
     assert _num(float("nan")) is None and _num("x") is None
     assert _str(float("nan")) is None and _str("SPEAKER_01") == "SPEAKER_01"
     json.dumps({"a": _num(FakeFloat64(2.0)), "b": _str(None)})
+
+
+def test_merge_turns_collapses_adjacent_same_speaker_turns():
+    from transcribe.turns import merge_turns
+
+    t = load()
+    turns = group_turns(t.segments)
+    # turns 3 and 4 are both SPEAKER_00 ("Ha lugar." then, after a 7 s gap, "Continúe, licenciado.")
+    assert turns[3].speaker == turns[4].speaker == "SPEAKER_00"
+    segs = merge_turns(t.segments, turns[3], turns[4])
+    merged = group_turns(segs)
+    assert len(merged) == len(turns) - 1
+    assert merged[3].text == "Ha lugar. Continúe, licenciado."
+    assert merged[3].start == 12.1 and merged[3].end == 24.0
+    import pytest
+
+    with pytest.raises(ValueError):
+        merge_turns(t.segments, turns[0], turns[2])

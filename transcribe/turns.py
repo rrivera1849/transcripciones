@@ -107,6 +107,17 @@ def replace_turn_text(segments: list[Segment], turn: Turn, new_text: str) -> lis
     return segs[: turn.seg_from] + [merged] + segs[turn.seg_to + 1 :]
 
 
+def merge_turns(segments: list[Segment], first: Turn, second: Turn) -> list[Segment]:
+    """Collapse two adjacent turns into one stored segment so they never re-split."""
+    if second.seg_from != first.seg_to + 1:
+        raise ValueError("turns are not adjacent")
+    segs = clean_segments(segments)
+    a, b = segs[first.seg_from], segs[second.seg_to]
+    text = clean_text(" ".join(s.text for s in segs[first.seg_from : second.seg_to + 1]))
+    merged = Segment(a.start, b.end, text, a.speaker, [])
+    return segs[: first.seg_from] + [merged] + segs[second.seg_to + 1 :]
+
+
 def set_turn_speaker(segments: list[Segment], turn: Turn, speaker: str) -> list[Segment]:
     segs = clean_segments(segments)
     for s in segs[turn.seg_from : turn.seg_to + 1]:

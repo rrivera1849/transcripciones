@@ -75,3 +75,4 @@ mark.current { background: #f59e0b; color: #fff; }
 .find input { flex:1; min-width: 0; }
 .find button { padding: 6px 10px; }
 .ok { color: #166534; background: #dcfce7; padding: 8px 12px; border-radius: 8px; }
+.danger-link { color: var(--danger); }

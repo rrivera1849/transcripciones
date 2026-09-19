@@ -26,6 +26,13 @@
           </form>
           {% endif %}
         </td>
+        <td>
+          <form method="post" action="/t/{{ j.id }}/delete" class="inline"
+                onsubmit="return confirm('¿Eliminar «{{ j.title|e }}» y su audio? No se puede deshacer.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <button class="link small danger-link" type="submit" title="Eliminar">Eliminar</button>
+          </form>
+        </td>
       </tr>
     {% endfor %}
     </tbody>

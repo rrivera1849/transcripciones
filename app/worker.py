@@ -148,7 +148,8 @@ class Worker:
         return 1
 
     def _retention(self, conn) -> int:
-        if config.RETENTION_DAYS <= 0:
+        """Delete audio RETENTION_DAYS after transcription (0 = right away, <0 = never)."""
+        if config.RETENTION_DAYS < 0:
             return 0
         cutoff = (datetime.now(UTC) - timedelta(days=config.RETENTION_DAYS)).isoformat()
         rows = conn.execute(

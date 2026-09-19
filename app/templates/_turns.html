@@ -12,6 +12,12 @@
       </form>
       {% endif %}
       <button type="button" class="link small edit-btn">Editar</button>
+      {% if t.can_merge_up %}
+      <form class="inline" hx-post="/t/{{ job.id }}/turn/{{ t.i }}/merge-up" hx-target="#turns" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <button type="submit" class="link small" title="Juntar este párrafo con el anterior del mismo hablante">Unir con el anterior</button>
+      </form>
+      {% endif %}
     </div>
     <p class="turn-text">{{ t.text }}</p>
     <form class="turn-edit" hidden hx-post="/t/{{ job.id }}/turn/{{ t.i }}/text" hx-target="#turns" hx-swap="outerHTML">

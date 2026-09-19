@@ -243,8 +243,10 @@ item ("compartir con…").
 
 **Data handling (court audio is sensitive)**
 
-- Audio deleted from the VPS 30 days after transcription (configurable);
-  transcripts kept until she deletes them.
+- Audio deleted from the app host `RETENTION_DAYS` after transcription
+  (default 30; 0 = immediately after the transcript is saved; -1 = never);
+  transcripts kept until someone deletes them. "Eliminar" on a hearing
+  removes transcript, search index and audio at once.
 - Modal keeps nothing after the function returns: the input is deleted from
   the volume at the end of the run, and a daily sweep removes anything older
   than 24 h in case a run crashed.

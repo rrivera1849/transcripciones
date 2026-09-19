@@ -257,3 +257,67 @@ def test_change_password_via_gui_and_admin_reset(client):
         assert not db.set_password(conn, "nadie", auth.hash_password("x"))
     assert TestClient(client.app).post("/login", data={"username": "mama", "password": "reset-por-admin"},
                                        follow_redirects=False).status_code == 303
+
+
+def test_merge_up_only_offered_for_same_speaker(client, tmp_path):
+    from app.worker import FakeBackend, Worker
+
+    login(client)
+    job_id = upload(client, _make_wav(tmp_path / "a.wav"))
+    Worker(FakeBackend(json.loads(FIX.read_text(encoding="utf-8")))).tick()
+    csrf = csrf_of(client)
+    page = client.get(f"/t/{job_id}").text
+    assert page.count("Unir con el anterior") == 1  # only turn 4 follows a same-speaker turn
+    assert "/turn/4/merge-up" in page
+
+    r = client.post(f"/t/{job_id}/turn/1/merge-up", data={"csrf_token": csrf})  # different speakers: no-op
+    assert r.status_code == 200 and "Unir con el anterior" in r.text
+
+    r = client.post(f"/t/{job_id}/turn/4/merge-up", data={"csrf_token": csrf})
+    assert r.status_code == 200 and "Ha lugar. Continúe, licenciado." in r.text
+    assert "Unir con el anterior" not in r.text
+
+
+def test_delete_from_list_removes_failed_job_and_its_audio(client, tmp_path):
+    from pathlib import Path
+
+    from app import db
+    from app.worker import Worker
+
+    class Broken:
+        def submit(self, job):
+            raise RuntimeError("boom")
+
+    login(client)
+    job_id = upload(client, _make_wav(tmp_path / "a.wav"))
+    Worker(Broken()).tick()
+    with db.connect() as conn:
+        audio_dir = Path(db.get_job(conn, job_id)["audio_path"]).parent
+    assert audio_dir.exists()
+    home = client.get("/").text
+    assert f"/t/{job_id}/delete" in home
+    r = client.post(f"/t/{job_id}/delete", data={"csrf_token": csrf_of(client)}, follow_redirects=False)
+    assert r.status_code == 303
+    assert not audio_dir.exists()
+    with db.connect() as conn:
+        assert db.get_job(conn, job_id) is None
+
+
+def test_retention_zero_deletes_audio_right_after_transcription(client, tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from app import config, db
+    from app.worker import FakeBackend, Worker
+
+    monkeypatch.setattr(config, "RETENTION_DAYS", 0)
+    login(client)
+    job_id = upload(client, _make_wav(tmp_path / "a.wav"))
+    w = Worker(FakeBackend(json.loads(FIX.read_text(encoding="utf-8"))))
+    w.tick()
+    w.tick()  # retention sweep runs at the end of each tick
+    with db.connect() as conn:
+        job = db.get_job(conn, job_id)
+    assert job["status"] == "done" and job["audio_deleted_at"]
+    assert not Path(job["audio_path"]).exists()
+    assert client.get(f"/t/{job_id}/audio").status_code == 404
+    assert "Se abre la sesión" in client.get(f"/t/{job_id}").text  # transcript kept
