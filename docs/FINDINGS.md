@@ -2,6 +2,21 @@
 
 Running notes from real runs. Newest first.
 
+## 2026-09-19 — CUDA out-of-memory on the second job in a warm container
+
+Second hearing through the web app failed in WhisperX ASR with "CUDA failed
+with error out of memory" on an A10G (24 GB). Root cause in our code: a job
+with a different `vocabulary` discarded the Whisper pipeline and loaded a
+second copy onto the GPU while the first was still resident; nothing ever
+called `torch.cuda.empty_cache()`; and batch size 16 had no fallback.
+
+Fixes (`transcribe/whisperx_pipeline.py`): the prompt is now swapped in
+place on the pipeline's options dataclass (no reload, ever); the CUDA cache
+is released at job start and between ASR, alignment and diarization; ASR
+retries on OOM with the batch halved down to 2; default batch is 8; GPU
+memory is logged at start and end of each job. Verified against the real
+whisperx classes on CPU. Requires `modal deploy`.
+
 ## 2026-09-18 — Phase 2 web app, first browser run
 
 Built the FastAPI + HTMX app and drove it headless with Playwright against
