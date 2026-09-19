@@ -243,6 +243,10 @@ item ("compartir con…").
 
 **Data handling (court audio is sensitive)**
 
+- After the transcript is saved the host keeps only a playback copy: 96 kbps
+  mono AAC (~43 MB/hour), every browser plays it. Files that are already
+  compact AAC (≤ 112 kbps, no video) are kept as they are. The original is
+  what Modal transcribed, so this never affects transcript quality.
 - Audio deleted from the app host `RETENTION_DAYS` after transcription
   (default 30; 0 = immediately after the transcript is saved; -1 = never);
   transcripts kept until someone deletes them. "Eliminar" on a hearing

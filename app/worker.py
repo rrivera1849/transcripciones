@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from transcribe import Transcript
-from transcribe.audio import normalize
+from transcribe.audio import make_playback_copy, needs_playback_copy, normalize, probe
 
 from . import config, db
 
@@ -145,7 +145,32 @@ class Worker:
                 duration_s=transcript.duration or job.get("duration_s"),
             )
         log.info("job %s done: %s", job["id"], transcript.timing)
+        self._compact_audio(conn, job)
         return 1
+
+    def _compact_audio(self, conn, job: dict) -> None:
+        """After the transcript is saved, keep only a compact playback copy of the audio.
+
+        The original was what Modal transcribed; the copy is for listening back in
+        the browser. Files that are already compact AAC are left untouched. Any
+        failure here keeps the original: it must never fail the job.
+        """
+        src = Path(job.get("audio_path") or "")
+        if not src.exists():
+            return
+        try:
+            info = probe(src)
+            if not needs_playback_copy(info):
+                return
+            dst = src.with_name("playback.m4a")
+            make_playback_copy(src, dst)
+            db.update_job(conn, job["id"], audio_path=str(dst))
+            src.unlink()
+            log.info("job %s: audio compacted %s -> %s (%d -> %d bytes)", job["id"], src.name,
+                     dst.name, job.get("size_bytes") or 0, dst.stat().st_size)
+        except Exception:  # noqa: BLE001
+            log.warning("job %s: could not compact audio, keeping original: %s",
+                        job["id"], traceback.format_exc())
 
     def _retention(self, conn) -> int:
         """Delete audio RETENTION_DAYS after transcription (0 = right away, <0 = never)."""

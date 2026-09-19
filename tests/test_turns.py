@@ -111,3 +111,14 @@ def test_merge_turns_collapses_adjacent_same_speaker_turns():
 
     with pytest.raises(ValueError):
         merge_turns(t.segments, turns[0], turns[2])
+
+
+def test_needs_playback_copy_rules():
+    from transcribe.audio import needs_playback_copy
+
+    assert not needs_playback_copy({"codec": "aac", "bit_rate": 104_000, "has_video": False})
+    assert needs_playback_copy({"codec": "aac", "bit_rate": 256_000, "has_video": False})
+    assert needs_playback_copy({"codec": "aac", "bit_rate": 96_000, "has_video": True})   # mp4 video
+    assert needs_playback_copy({"codec": "pcm_s16le", "bit_rate": 256_000, "has_video": False})
+    assert needs_playback_copy({"codec": "mp3", "bit_rate": 64_000, "has_video": False})
+    assert needs_playback_copy({"codec": "aac", "bit_rate": 0, "has_video": False})  # unknown rate

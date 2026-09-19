@@ -23,12 +23,42 @@ def probe(path: str | Path) -> dict:
     ).stdout
     info = json.loads(out)
     audio = next((s for s in info.get("streams", []) if s.get("codec_type") == "audio"), {})
+    fmt = info.get("format", {})
     return {
-        "duration": float(info.get("format", {}).get("duration", 0) or 0),
+        "duration": float(fmt.get("duration", 0) or 0),
         "channels": int(audio.get("channels", 0) or 0),
         "sample_rate": int(audio.get("sample_rate", 0) or 0),
         "codec": audio.get("codec_name"),
+        "bit_rate": int(audio.get("bit_rate") or fmt.get("bit_rate") or 0),
+        "has_video": any(s.get("codec_type") == "video" and s.get("disposition", {}).get("attached_pic") != 1
+                         for s in info.get("streams", [])),
     }
+
+
+PLAYBACK_BITRATE = 96_000          # AAC mono, transparent for speech
+PLAYBACK_KEEP_BELOW = 112_000      # already-AAC files at or under this are kept as they are
+
+
+def needs_playback_copy(info: dict) -> bool:
+    """True unless the file is already compact mono/stereo AAC audio without video."""
+    return not (
+        info.get("codec") == "aac"
+        and 0 < info.get("bit_rate", 0) <= PLAYBACK_KEEP_BELOW
+        and not info.get("has_video")
+    )
+
+
+def make_playback_copy(src: str | Path, dst: str | Path) -> Path:
+    """Re-encode to 96 kbps mono AAC in .m4a: small, and every browser plays it."""
+    dst = Path(dst)
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error", "-i", str(src), "-vn", "-ac", "1",
+            "-c:a", "aac", "-b:a", str(PLAYBACK_BITRATE), "-movflags", "+faststart", str(dst),
+        ],
+        check=True,
+    )
+    return dst
 
 
 def normalize(src: str | Path, dst: str | Path) -> Path:

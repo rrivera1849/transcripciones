@@ -321,3 +321,40 @@ def test_retention_zero_deletes_audio_right_after_transcription(client, tmp_path
     assert not Path(job["audio_path"]).exists()
     assert client.get(f"/t/{job_id}/audio").status_code == 404
     assert "Se abre la sesión" in client.get(f"/t/{job_id}").text  # transcript kept
+
+
+def _make_aac(path: Path, kbps: int, seconds: float = 1.0) -> Path:
+    subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}",
+         "-ac", "1", "-c:a", "aac", "-b:a", f"{kbps}k", str(path)],
+        check=True,
+    )
+    return path
+
+
+def test_playback_copy_made_for_wav_but_not_for_compact_aac(client, tmp_path):
+    from pathlib import Path
+
+    from app import db
+    from app.worker import FakeBackend, Worker
+    from transcribe.audio import probe
+
+    login(client)
+    wav_job = upload(client, _make_wav(tmp_path / "grande.wav", seconds=3))
+    aac_job = upload(client, _make_aac(tmp_path / "compacto.m4a", kbps=64, seconds=3))
+    w = Worker(FakeBackend(json.loads(FIX.read_text(encoding="utf-8"))))
+    w.tick()
+
+    with db.connect() as conn:
+        wav_path = Path(db.get_job(conn, wav_job)["audio_path"])
+        aac_path = Path(db.get_job(conn, aac_job)["audio_path"])
+    assert wav_path.name == "playback.m4a" and wav_path.exists()
+    assert not (wav_path.parent / "input.wav").exists()
+    info = probe(wav_path)
+    # a synthetic tone encodes far below the 96 kbps target; only the ceiling is meaningful here
+    assert info["codec"] == "aac" and info["channels"] == 1 and 0 < info["bit_rate"] <= 112_000
+    assert wav_path.stat().st_size < (tmp_path / "grande.wav").stat().st_size
+    assert aac_path.name == "input.m4a" and aac_path.exists()  # left untouched
+
+    r = client.get(f"/t/{wav_job}/audio")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("audio/")
