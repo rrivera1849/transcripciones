@@ -62,3 +62,15 @@ table.jobs th { font-size:14px; color:var(--muted); font-weight:600; }
 .turn-edit { margin-top: 8px; }
 .player { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:10px 16px; }
 .player audio { width:100%; max-width:1100px; display:block; margin:0 auto; }
+
+.between { justify-content: space-between; align-items: center; }
+.search-form { display:flex; gap:8px; flex:1; max-width: 520px; }
+.search-form input { flex:1; min-width: 0; }
+.big-search { max-width: none; margin-bottom: 18px; }
+.results { display:flex; flex-direction:column; gap:10px; }
+.snippet { margin: 6px 0 0; }
+mark { background: #fde68a; padding: 0 2px; border-radius: 3px; }
+mark.current { background: #f59e0b; color: #fff; }
+.find { display:flex; gap:8px; align-items:center; margin-bottom: 8px; position: sticky; top: 0; background: var(--bg); padding: 6px 0; z-index: 2; }
+.find input { flex:1; min-width: 0; }
+.find button { padding: 6px 10px; }

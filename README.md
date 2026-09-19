@@ -48,12 +48,12 @@ Outputs land in `out/`: `.json` (raw segments + words), `.txt`, `.srt`, and
 
 ```
 app/
-  main.py           FastAPI routes: login, chunked upload, job list, transcript page, exports, audio
+  main.py           FastAPI routes: login, chunked upload, job list, search, transcript page, exports, audio
   worker.py         queue -> Modal (or local CPU) -> transcripts; retention sweep; restart-safe
-  db.py             SQLite schema (users, jobs, transcripts)
+  db.py             SQLite schema (users, jobs, transcripts, FTS5 search index)
   auth.py           bcrypt, signed 90-day session cookie, login lockout, CSRF
   templates/        Spanish UI (Jinja2 + HTMX)
-  static/           style.css, upload.js (chunked upload), transcript.js (player, edit), htmx
+  static/           style.css, upload.js (chunked upload), transcript.js (player, edit, find), htmx
 modal_app.py        Modal app: image with baked weights, Volume `audio-in`, Transcriber class, daily sweep
 transcribe/         shared package (also shipped into the Modal image)
   __init__.py       Transcript / Segment / Word dataclasses

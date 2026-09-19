@@ -146,6 +146,14 @@ def home(request: Request, session: dict = Depends(current_session)):
                   extensions=sorted(ACCEPTED_EXTENSIONS))
 
 
+@app.get("/buscar", response_class=HTMLResponse)
+def search_page(request: Request, q: str = "", session: dict = Depends(current_session)):
+    q = q.strip()[:200]
+    with db.connect() as conn:
+        results = [dict(_job_view(r), snippet=r["snippet"]) for r in db.search(conn, q)] if q else []
+    return render(request, "search.html", session, q=q, results=results)
+
+
 @app.get("/jobs", response_class=HTMLResponse)
 def jobs_partial(request: Request, session: dict = Depends(current_session)):
     with db.connect() as conn:
@@ -279,13 +287,14 @@ def _turns_ctx(transcript: Transcript, overrides: dict) -> dict:
 
 
 @app.get("/t/{job_id}", response_class=HTMLResponse)
-def transcript_page(request: Request, job_id: str, session: dict = Depends(current_session)):
+def transcript_page(request: Request, job_id: str, q: str = "",
+                    session: dict = Depends(current_session)):
     with db.connect() as conn:
         job, transcript, overrides = _load(conn, job_id, session)
     ctx = _turns_ctx(transcript, overrides)
     audio_ok = job["audio_path"] and Path(job["audio_path"]).exists() and not job["audio_deleted_at"]
     return render(request, "transcript.html", session, job=_job_view(job), audio_ok=audio_ok,
-                  duration=fmt_ts(transcript.duration or 0),
+                  duration=fmt_ts(transcript.duration or 0), q=q.strip()[:200],
                   retention_days=config.RETENTION_DAYS, **ctx)
 
 

@@ -32,7 +32,13 @@
 </section>
 
 <section>
-  <h2>Transcripciones</h2>
+  <div class="row between">
+    <h2>Transcripciones</h2>
+    <form method="get" action="/buscar" class="search-form" role="search">
+      <input type="search" name="q" placeholder="Buscar una palabra o frase en todas las vistas" aria-label="Buscar">
+      <button class="secondary" type="submit">Buscar</button>
+    </form>
+  </div>
   {% include "_jobs.html" %}
 </section>
 <script>

@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS transcripts (
     edited_at TEXT,
     edited_by TEXT
 );
+CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
+    job_id UNINDEXED, title, body, tokenize='unicode61 remove_diacritics 2'
+);
 """
 
 ACTIVE_STATUSES = ("uploading", "queued", "running")
@@ -74,6 +77,13 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 def init_db(path: Path | None = None) -> None:
     with connect(path) as conn:
         conn.executescript(SCHEMA)
+        # backfill the search index for transcripts saved before it existed
+        missing = conn.execute(
+            """SELECT t.job_id FROM transcripts t
+               LEFT JOIN transcript_fts f ON f.job_id = t.job_id WHERE f.job_id IS NULL"""
+        ).fetchall()
+        for row in missing:
+            reindex(conn, row["job_id"])
 
 
 @contextmanager
@@ -153,10 +163,13 @@ def update_job(conn: sqlite3.Connection, job_id: str, **fields: Any) -> None:
     fields["updated_at"] = now()
     cols = ", ".join(f"{k} = ?" for k in fields)
     conn.execute(f"UPDATE jobs SET {cols} WHERE id = ?", (*fields.values(), job_id))
+    if "title" in fields:
+        reindex(conn, job_id)
 
 
 def delete_job(conn: sqlite3.Connection, job_id: str) -> None:
     conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+    conn.execute("DELETE FROM transcript_fts WHERE job_id = ?", (job_id,))
 
 
 # --- transcripts ---------------------------------------------------------
@@ -167,6 +180,7 @@ def save_transcript(conn: sqlite3.Connection, job_id: str, data: dict) -> None:
            ON CONFLICT(job_id) DO UPDATE SET data = excluded.data""",
         (job_id, json.dumps(data, ensure_ascii=False)),
     )
+    reindex(conn, job_id)
 
 
 def get_transcript(conn: sqlite3.Connection, job_id: str) -> tuple[dict, dict] | None:
@@ -192,3 +206,48 @@ def update_transcript(
         sets.append("speaker_names = ?")
         vals.append(json.dumps(speaker_names, ensure_ascii=False))
     conn.execute(f"UPDATE transcripts SET {', '.join(sets)} WHERE job_id = ?", (*vals, job_id))
+    if data is not None:
+        reindex(conn, job_id)
+
+
+# --- search --------------------------------------------------------------
+
+def reindex(conn: sqlite3.Connection, job_id: str) -> None:
+    """Rebuild the full-text row for one job from its title and transcript text."""
+    row = conn.execute(
+        """SELECT j.title, t.data FROM jobs j LEFT JOIN transcripts t ON t.job_id = j.id
+           WHERE j.id = ?""",
+        (job_id,),
+    ).fetchone()
+    conn.execute("DELETE FROM transcript_fts WHERE job_id = ?", (job_id,))
+    if row is None or row["data"] is None:
+        return
+    body = " ".join(
+        " ".join(str(s.get("text", "")).split()) for s in json.loads(row["data"]).get("segments", [])
+    )
+    conn.execute(
+        "INSERT INTO transcript_fts (job_id, title, body) VALUES (?, ?, ?)",
+        (job_id, row["title"], body),
+    )
+
+
+def fts_query(q: str) -> str:
+    """Turn free text into a safe FTS5 query: every word required, prefix-matched."""
+    words = [w.replace('"', "") for w in q.split()]
+    words = [w for w in words if w]
+    return " ".join(f'"{w}"*' for w in words)
+
+
+def search(conn: sqlite3.Connection, q: str, limit: int = 50) -> list[dict]:
+    match = fts_query(q)
+    if not match:
+        return []
+    rows = conn.execute(
+        """SELECT j.*, snippet(transcript_fts, 2, '<mark>', '</mark>', '…', 14) AS snippet,
+                  bm25(transcript_fts) AS rank
+           FROM transcript_fts JOIN jobs j ON j.id = transcript_fts.job_id
+           WHERE transcript_fts MATCH ?
+           ORDER BY rank LIMIT ?""",
+        (match, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]

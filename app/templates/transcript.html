@@ -56,6 +56,12 @@
   </aside>
 
   <section class="transcript">
+    <div class="find" role="search">
+      <input id="find" type="search" value="{{ q }}" placeholder="Buscar en esta transcripción" aria-label="Buscar en esta transcripción">
+      <span id="find-count" class="muted small"></span>
+      <button type="button" class="secondary" id="find-prev" title="Anterior">▲</button>
+      <button type="button" class="secondary" id="find-next" title="Siguiente">▼</button>
+    </div>
     {% include "_turns.html" %}
   </section>
 </div>

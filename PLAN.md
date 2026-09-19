@@ -217,7 +217,12 @@ item ("compartir con…").
      original is kept for undo.
    - **Buttons**: Copiar todo · Descargar .docx · Descargar .txt ·
      Descargar .srt · Eliminar.
-4. `/settings` (for you, not her): retention days, min/max speakers default.
+   - **Buscar en esta transcripción**: highlights every match (accent- and
+     case-insensitive), "2 de 7", ▲▼ to jump, Enter for next.
+5. `/buscar?q=` — full-text search across all hearings (SQLite FTS5, accents
+   ignored, prefix matching), with a highlighted snippet per hearing; a result
+   opens the transcript with the search box pre-filled.
+6. `/settings` (for you, not her): retention days, min/max speakers default.
 
 **Exports**
 
@@ -351,7 +356,6 @@ Now the infrastructure: VPS, domain, Cloudflare tunnel (`docs/SETUP.md`
 
 ### Phase 5 — Later, only if she asks
 
-- Search across all transcripts.
 - Per-case folders and a "same speakers as last hearing" hint.
 - Email when a long transcript finishes.
 - Summary / key points (requires an explicit decision on sending court text

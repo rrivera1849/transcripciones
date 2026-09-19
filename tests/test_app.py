@@ -159,3 +159,32 @@ def test_rejects_non_audio(client, tmp_path):
     bad.write_text("hola")
     r = client.post("/upload/init", json={"filename": bad.name, "size": 4}, headers={"X-CSRF-Token": csrf_of(client)})
     assert r.status_code == 400
+
+
+def test_search_across_hearings_is_accent_insensitive(client, tmp_path):
+    from app import db
+    from app.worker import FakeBackend, Worker
+
+    login(client)
+    job_id = upload(client, _make_wav(tmp_path / "a.wav"), title="Vista Morovis")
+    Worker(FakeBackend(json.loads(FIX.read_text(encoding="utf-8")))).tick()
+
+    r = client.get("/buscar", params={"q": "sesion"})  # matches "sesión"
+    assert r.status_code == 200 and "Vista Morovis" in r.text and "<mark>sesión</mark>" in r.text
+    assert f"/t/{job_id}?q=sesion" in r.text
+    assert "No se encontró" in client.get("/buscar", params={"q": "zanahoria"}).text
+    assert "Vista Morovis" in client.get("/buscar", params={"q": "morovis"}).text  # title indexed
+    assert client.get("/buscar", params={"q": '"unbalanced'}).status_code == 200  # never a 500
+
+    # edits are re-indexed
+    csrf = csrf_of(client)
+    client.post(f"/t/{job_id}/turn/0/text", data={"text": "Comienza la audiencia.", "csrf_token": csrf})
+    assert "audiencia" in client.get("/buscar", params={"q": "audiencia"}).text
+    assert "No se encontró" in client.get("/buscar", params={"q": "sesion"}).text
+
+    page = client.get(f"/t/{job_id}", params={"q": "venia"})
+    assert 'id="find"' in page.text and 'value="venia"' in page.text
+
+    with db.connect() as conn:
+        db.delete_job(conn, job_id)
+    assert "No se encontró" in client.get("/buscar", params={"q": "venia"}).text

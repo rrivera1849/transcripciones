@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Buscar · Transcripciones{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">← Todas las transcripciones</a></nav>
+<h1>Buscar</h1>
+<form method="get" action="/buscar" class="search-form big-search" role="search">
+  <input type="search" name="q" value="{{ q }}" placeholder="Palabra o frase" aria-label="Buscar" autofocus>
+  <button class="primary" type="submit">Buscar</button>
+</form>
+{% if q %}
+  {% if results %}
+  <p class="muted">{{ results|length }} {{ "vista" if results|length == 1 else "vistas" }} con «{{ q }}»</p>
+  <div class="results">
+    {% for r in results %}
+    <article class="card result">
+      <a class="job-title" href="/t/{{ r.id }}?q={{ q|urlencode }}">{{ r.title }}</a>
+      <div class="muted small">{{ r.date }} · {{ r.duration }}</div>
+      <p class="snippet">{{ r.snippet|safe }}</p>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">No se encontró «{{ q }}» en ninguna transcripción.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

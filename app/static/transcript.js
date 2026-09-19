@@ -22,6 +22,70 @@
     });
   }
 
+  // ---- in-page search: accent- and case-insensitive, highlights, prev/next, scrolls ----
+  const find = document.getElementById("find"), findCount = document.getElementById("find-count");
+  let marks = [], current = -1;
+
+  function fold(str) {
+    // returns folded string + map from folded index -> original index
+    const out = [], map = [];
+    for (let i = 0; i < str.length; i++) {
+      const f = str[i].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      for (const ch of f) { out.push(ch); map.push(i); }
+    }
+    return { text: out.join(""), map };
+  }
+
+  function clearMarks() {
+    document.querySelectorAll(".turn-text mark").forEach((m) => m.replaceWith(m.textContent));
+    document.querySelectorAll(".turn-text").forEach((p) => p.normalize());
+    marks = []; current = -1;
+  }
+
+  function highlight(query) {
+    clearMarks();
+    const q = fold(query.trim()).text;
+    if (!q) { findCount.textContent = ""; return; }
+    document.querySelectorAll(".turn-text").forEach((p) => {
+      const original = p.textContent;
+      const { text, map } = fold(original);
+      const ranges = [];
+      let from = 0, at;
+      while ((at = text.indexOf(q, from)) !== -1) { ranges.push([map[at], map[at + q.length - 1] + 1]); from = at + q.length; }
+      if (!ranges.length) return;
+      const frag = document.createDocumentFragment();
+      let pos = 0;
+      ranges.forEach(([s, e]) => {
+        frag.appendChild(document.createTextNode(original.slice(pos, s)));
+        const m = document.createElement("mark"); m.textContent = original.slice(s, e); frag.appendChild(m); marks.push(m);
+        pos = e;
+      });
+      frag.appendChild(document.createTextNode(original.slice(pos)));
+      p.replaceChildren(frag);
+    });
+    findCount.textContent = marks.length ? `${marks.length} coincidencia${marks.length === 1 ? "" : "s"}` : "Sin coincidencias";
+    if (marks.length) go(0);
+  }
+
+  function go(i) {
+    if (!marks.length) return;
+    if (current >= 0) marks[current].classList.remove("current");
+    current = (i + marks.length) % marks.length;
+    marks[current].classList.add("current");
+    marks[current].scrollIntoView({ block: "center", behavior: "smooth" });
+    findCount.textContent = `${current + 1} de ${marks.length}`;
+  }
+
+  if (find) {
+    let timer;
+    find.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => highlight(find.value), 150); });
+    find.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(e.shiftKey ? current - 1 : current + 1); } });
+    document.getElementById("find-next").addEventListener("click", () => go(current + 1));
+    document.getElementById("find-prev").addEventListener("click", () => go(current - 1));
+    document.body.addEventListener("htmx:afterSwap", () => { if (find.value) highlight(find.value); });
+    if (find.value) highlight(find.value);
+  }
+
   const copy = document.getElementById("copy-all");
   if (copy) copy.addEventListener("click", async () => {
     const text = turns().map((el) => {
