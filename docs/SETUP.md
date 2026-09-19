@@ -59,67 +59,137 @@ Environment variables). Everything else lives in the VPS `.env`.
 - [ ] Secret `huggingface` with key `HF_TOKEN` exists
 - [ ] Billing method on file
 
-## 3. Domain + Cloudflare — 15 min — *phase 3, needed now*
+## 3. Domain + Cloudflare — 20 min — *phase 3, needed now*
 
-1. Create a free account at https://dash.cloudflare.com/sign-up.
-2. Domain: either
-   - buy one through Cloudflare Registrar (Domain Registration → Register
-     Domains; sold at cost, ~$10/yr), or
-   - add a domain you already own (Add a site → Free plan) and change its
-     nameservers at your registrar to the two Cloudflare gives you.
-     Propagation can take up to a day.
-3. Create the tunnel: Zero Trust → Networks → Tunnels → **Create a tunnel** →
-   Cloudflared → name `transcripciones` → **Save**.
-   On the next screen copy the long token from the Docker command
-   (`--token eyJ…`). That is `TUNNEL_TOKEN`. Skip running the command.
-4. Still in the tunnel: **Public Hostname** tab → Add a public hostname:
-   - Subdomain: `transcripciones` (or whatever you want)
-   - Domain: your domain
-   - Service type `HTTP`, URL `web:8000`
-5. Optional but recommended: Zero Trust → Settings → Authentication is
-   *not* needed. We use the app's own login.
+Cloudflare gives us the public address, HTTPS and the tunnel, all free.
 
-Note: Cloudflare's free plan caps a single request body at 100 MB. The app
-uploads in 5 MB chunks specifically so multi-GB hearings still work.
+**3.1 Account**
+
+1. Go to https://dash.cloudflare.com/sign-up, create the account, confirm the
+   email.
+
+**3.2 Domain** — pick one of the two:
+
+- *Buy a new one (simplest).* Left menu → **Domain Registration** →
+  **Register Domains** → search a name → add to cart → pay. Cloudflare sells
+  at cost (≈ $10/yr for .com). It is active immediately; skip to 3.3.
+- *Use a domain you already own.* Left menu → **Add a domain** → type it →
+  **Continue** → choose the **Free** plan → Cloudflare scans existing DNS,
+  click **Continue** → it shows **two nameservers** (like
+  `ada.ns.cloudflare.com`). Log in at the registrar where you bought the
+  domain, find "Nameservers", replace them with those two, save. Back in
+  Cloudflare click **Check nameservers**. Status changes to **Active** within
+  minutes to a day; you get an email.
+
+**3.3 Zero Trust (where tunnels live)**
+
+1. Left menu → **Zero Trust**. The first time it asks for a *team name*
+   (anything, e.g. `riverasoto`) and a plan: choose **Free**. It may ask for
+   a payment method even for the free plan; nothing is charged.
+
+**3.4 Create the tunnel**
+
+1. Zero Trust → **Networks** → **Tunnels** → **Create a tunnel**.
+2. Connector type: **Cloudflared** → **Next**.
+3. Tunnel name: `transcripciones` → **Save tunnel**.
+4. The next page ("Install and run a connector") shows install commands.
+   Click the **Docker** tab. The command ends in
+   `--token eyJhbGci...` (a very long string). **Copy only the token**, the
+   part after `--token`. That is `TUNNEL_TOKEN` for the server's `.env`.
+   Do not run the command here. → **Next**.
+
+**3.5 Route the hostname to the app**
+
+On the "Route tunnel" page (also reachable later: click the tunnel → **Edit**
+→ **Public Hostname** → **Add a public hostname**):
+
+| Field | Value |
+|---|---|
+| Subdomain | `transcripciones` (or whatever you like) |
+| Domain | your domain (dropdown) |
+| Path | leave empty |
+| Type | **HTTP** |
+| URL | `web:8000` |
+
+**Save**. Cloudflare creates the DNS record for you. `web:8000` is the name
+of the app container inside Docker Compose; the `cloudflared` container
+resolves it on the same private network.
+
+The tunnel shows **Inactive/Down** until the server side runs; that is
+expected.
+
+**3.6 Optional hardening (skip for now)**
+
+- Zero Trust → **Access** → Applications: put an email one-time-code login in
+  front of the hostname. Adds a step for Mom; the app's own login is enough
+  to start.
 
 - [ ] Cloudflare account
-- [ ] Domain active on Cloudflare (status "Active" in the dashboard)
-- [ ] Tunnel created, `TUNNEL_TOKEN` saved → VPS `.env`
-- [ ] Public hostname `transcripciones.<domain>` → `http://web:8000`
+- [ ] Domain shows **Active**
+- [ ] Tunnel `transcripciones` created; `TUNNEL_TOKEN` saved somewhere safe
+- [ ] Public hostname `transcripciones.<domain>` → HTTP `web:8000`
 
-## 4. VPS — 20 min — *phase 3, needed now*
+## 4. VPS (Hetzner) — 25 min — *phase 3, needed now*
 
-Hetzner is the suggested provider; any Ubuntu VPS with Docker works.
+**4.1 SSH key on your laptop** (skip if `~/.ssh/id_ed25519.pub` exists)
 
-1. Sign up at https://console.hetzner.cloud (identity verification can take
-   a few hours on a new account).
-2. New project `transcripciones` → **Add Server**:
-   - Location: **Ashburn, VA** (closest to Puerto Rico)
-   - Image: **Ubuntu 24.04**
-   - Type: shared vCPU, the ~€4–8 tier with **4 GB RAM**
-   - Disk: hearings are big and kept 30 days. Either pick a plan with
-     ≥ 80 GB or add a **Volume** of 100 GB (~€5/mo). Start with 80 GB.
-   - SSH key: add your laptop's public key
-     (`cat ~/.ssh/id_ed25519.pub`; create one with `ssh-keygen -t ed25519`
-     if you don't have it). Do **not** use password login.
-   - Firewall: create one that allows inbound **SSH (22)** only. Nothing
-     else needs to be open; the tunnel makes outbound connections.
-3. First login and base setup:
+```bash
+ssh-keygen -t ed25519 -C "laptop"        # accept defaults; a passphrase is fine
+cat ~/.ssh/id_ed25519.pub                # copy this whole line
+```
 
-   ```bash
-   ssh root@<server-ip>
-   apt update && apt upgrade -y
-   apt install -y unattended-upgrades && dpkg-reconfigure -plow unattended-upgrades
-   curl -fsSL https://get.docker.com | sh
-   docker --version && docker compose version
-   mkdir -p /opt/transcripciones
-   ```
+**4.2 Account**
 
-4. Note the server IP. Then follow `docs/DEPLOY.md` for the deployment itself.
+1. https://console.hetzner.cloud → **Sign up**. New accounts go through a
+   verification step (payment method; sometimes an ID check). This can take
+   from minutes to a day.
 
-- [ ] Server running, SSH key login works
-- [ ] Firewall allows only port 22
-- [ ] Docker + Compose installed
+**4.3 Create the server**
+
+1. **New project** → name `transcripciones` → open it → **Add Server**.
+2. **Location**: **Ashburn, VA** (`ash`). Closest to Puerto Rico.
+3. **Image**: **Ubuntu 24.04**.
+4. **Type**: **Shared vCPU** → **x86 (Intel/AMD)** → **CPX21**
+   (3 vCPU, 4 GB RAM, 80 GB disk, ≈ €8/mo). US locations only offer the
+   CPX line, which is why not the cheaper CX plans.
+5. **Networking**: keep **Public IPv4** and **IPv6** both ticked. IPv4 costs
+   about €0.50/mo; you need it to SSH in from most home networks.
+6. **SSH keys**: **Add SSH key** → paste the line from 4.1 → name it
+   `laptop`. Make sure it is ticked. (With a key, Hetzner disables password
+   login on the server.)
+7. **Firewalls**: **Create firewall** → name `ssh-only` → inbound rules: keep
+   only **SSH (TCP 22)** from `Any IPv4 / Any IPv6`; delete any ICMP or
+   other rows if present. Outbound: default (allow all). Apply to this
+   server. Nothing else needs to be open: the tunnel dials out.
+8. **Backups**: leave off (we do our own; this would add 20 %).
+9. **Name**: `transcripciones`. → **Create & Buy now**.
+
+The server is ready in about a minute; note its **IPv4 address**.
+
+**4.4 First login and base setup**
+
+```bash
+ssh root@<server-ip>          # answer "yes" to the fingerprint prompt
+
+apt update && apt upgrade -y
+apt install -y git unattended-upgrades
+dpkg-reconfigure -plow unattended-upgrades     # choose <Yes>
+curl -fsSL https://get.docker.com | sh
+docker --version && docker compose version     # both print versions
+timedatectl set-timezone America/Puerto_Rico
+```
+
+If `apt upgrade` says a reboot is required: `reboot`, wait a minute,
+`ssh` back in.
+
+**4.5 Hand over to the runbook**
+
+Continue with `docs/DEPLOY.md` from step 1 (clone, `.env`, `docker compose
+up`, accounts, verification, backups).
+
+- [ ] Server running, `ssh root@<ip>` works with the key
+- [ ] Firewall `ssh-only` attached
+- [ ] Docker + Compose installed, git installed
 - [ ] Unattended security updates enabled
 
 ## 4b. Your laptop (for running the app locally) — 10 min
