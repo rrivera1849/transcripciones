@@ -9,6 +9,7 @@ and `docs/SETUP.md` for the accounts you need.
 ```bash
 uv sync --group dev
 uv run python scripts/add_user.py mama            # prints a generated password
+# forgot it later?  uv run python scripts/set_password.py mama   (users can also change it at /cuenta)
 cp .env.example .env                              # set MODAL_TOKEN_ID/SECRET; TRANSCRIBER=modal
 uv run modal deploy modal_app.py                  # REQUIRED once per code change: creates the
                                                   # persistent app the worker looks up by name

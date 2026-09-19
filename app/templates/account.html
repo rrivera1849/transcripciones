@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Mi cuenta · Transcripciones{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">← Todas las transcripciones</a></nav>
+<section class="card narrow" style="margin-top: 20px">
+  <h1>Cambiar contraseña</h1>
+  <p class="muted small">Usuario: <strong>{{ session.u }}</strong></p>
+  {% if ok %}<p class="ok">Contraseña cambiada. Ya puedes usarla la próxima vez que entres.</p>{% endif %}
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/cuenta" class="stack" autocomplete="on">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <label>Contraseña actual <input name="current" type="password" autocomplete="current-password" required></label>
+    <label>Contraseña nueva <input name="new" type="password" autocomplete="new-password" minlength="8" required>
+      <span class="muted small">Al menos 8 caracteres.</span></label>
+    <label>Repite la contraseña nueva <input name="confirm" type="password" autocomplete="new-password" minlength="8" required></label>
+    <button class="primary big" type="submit">Guardar</button>
+  </form>
+</section>
+{% endblock %}

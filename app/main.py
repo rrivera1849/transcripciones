@@ -121,6 +121,35 @@ def logout(request: Request, session: dict = Depends(current_session),
     return resp
 
 
+MIN_PASSWORD_LEN = 8
+
+
+@app.get("/cuenta", response_class=HTMLResponse)
+def account_page(request: Request, session: dict = Depends(current_session)):
+    return render(request, "account.html", session, error=None, ok=False)
+
+
+@app.post("/cuenta", response_class=HTMLResponse)
+def change_password(request: Request, session: dict = Depends(current_session),
+                    current: str = Form(...), new: str = Form(...), confirm: str = Form(...),
+                    csrf_token: str = Form(...)):
+    csrf_ok(request, session, csrf_token)
+    with db.connect() as conn:
+        user = db.get_user(conn, session["u"])
+        if not user or not auth.verify_password(current, user["password_hash"]):
+            error = "La contraseña actual no es correcta."
+        elif len(new) < MIN_PASSWORD_LEN:
+            error = f"La contraseña nueva debe tener al menos {MIN_PASSWORD_LEN} caracteres."
+        elif new != confirm:
+            error = "Las dos contraseñas nuevas no coinciden."
+        elif new == current:
+            error = "La contraseña nueva es igual a la actual."
+        else:
+            db.set_password(conn, session["u"], auth.hash_password(new))
+            error = None
+    return render(request, "account.html", session, error=error, ok=error is None)
+
+
 # --- home + job list -----------------------------------------------------
 
 def _job_view(row) -> dict:

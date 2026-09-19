@@ -13,7 +13,7 @@
     {% if session %}
     <form method="post" action="/logout" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
-      <span class="muted">{{ session.u }}</span>
+      <a class="muted" href="/cuenta" title="Cambiar contraseña">{{ session.u }}</a>
       <button class="link" type="submit">Salir</button>
     </form>
     {% endif %}

@@ -207,6 +207,8 @@ Claude.
   pointing at `https://transcripciones.<domain>/healthz`.
 - **Second account** for the other person (phase 4): just their preferred
   username; the password is generated when you run `scripts/add_user.py`.
+  Anyone can change their own password from the app (click the username in
+  the header); `scripts/set_password.py` is the admin reset if it is forgotten.
 
 ---
 

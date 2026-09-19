@@ -228,3 +228,32 @@ def test_dotenv_loader(tmp_path, monkeypatch):
 
     assert os.environ["DOTENV_TEST_A"] == "hello world"
     assert os.environ["DOTENV_TEST_B"] == "real"  # real env wins
+
+
+def test_change_password_via_gui_and_admin_reset(client):
+    from app import auth, db
+
+    login(client)
+    csrf = csrf_of(client)
+    assert 'href="/cuenta"' in client.get("/").text
+
+    def change(current, new, confirm):
+        return client.post("/cuenta", data={"current": current, "new": new, "confirm": confirm,
+                                            "csrf_token": csrf}).text
+
+    assert "actual no es correcta" in change("wrong", "nuevaclave1", "nuevaclave1")
+    assert "al menos 8" in change("secreta", "corta", "corta")
+    assert "no coinciden" in change("secreta", "nuevaclave1", "nuevaclave2")
+    assert "Contraseña cambiada" in change("secreta", "nuevaclave1", "nuevaclave1")
+
+    fresh = TestClient(client.app)
+    assert fresh.post("/login", data={"username": "mama", "password": "secreta"}).text.count("incorrectos") == 1
+    assert fresh.post("/login", data={"username": "mama", "password": "nuevaclave1"},
+                      follow_redirects=False).status_code == 303
+
+    # admin reset
+    with db.connect() as conn:
+        assert db.set_password(conn, "mama", auth.hash_password("reset-por-admin"))
+        assert not db.set_password(conn, "nadie", auth.hash_password("x"))
+    assert TestClient(client.app).post("/login", data={"username": "mama", "password": "reset-por-admin"},
+                                       follow_redirects=False).status_code == 303

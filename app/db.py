@@ -110,6 +110,13 @@ def create_user(conn: sqlite3.Connection, username: str, password_hash: str) -> 
     )
 
 
+def set_password(conn: sqlite3.Connection, username: str, password_hash: str) -> bool:
+    cur = conn.execute(
+        "UPDATE users SET password_hash = ? WHERE username = ?", (password_hash, username)
+    )
+    return cur.rowcount == 1
+
+
 def count_users(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 

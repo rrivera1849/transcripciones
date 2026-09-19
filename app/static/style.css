@@ -74,3 +74,4 @@ mark.current { background: #f59e0b; color: #fff; }
 .find { display:flex; gap:8px; align-items:center; margin-bottom: 8px; position: sticky; top: 0; background: var(--bg); padding: 6px 0; z-index: 2; }
 .find input { flex:1; min-width: 0; }
 .find button { padding: 6px 10px; }
+.ok { color: #166534; background: #dcfce7; padding: 8px 12px; border-radius: 8px; }
