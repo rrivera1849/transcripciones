@@ -6,6 +6,23 @@ import os
 import secrets
 from pathlib import Path
 
+
+def load_dotenv(path: Path | None = None) -> None:
+    """Minimal .env loader: KEY=VALUE lines, '#' comments, no override of real env vars."""
+    path = path or Path(os.environ.get("ENV_FILE", ".env"))
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        value = value.split(" #", 1)[0].strip().strip("'\"")
+        os.environ.setdefault(key.strip(), value)
+
+
+load_dotenv()
+
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data")).resolve()
 AUDIO_DIR = DATA_DIR / "audio"
 DB_PATH = DATA_DIR / "app.sqlite3"

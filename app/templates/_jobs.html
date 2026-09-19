@@ -18,7 +18,13 @@
           <span class="chip {{ j.status }}">
             {% if j.status == "uploading" %}Subiendo {{ j.pct }} %{% else %}{{ j.status_label }}{% endif %}
           </span>
-          {% if j.status == "error" %}<div class="error small">{{ j.error }}</div>{% endif %}
+          {% if j.status == "error" %}
+          <div class="error small">{{ j.error }}</div>
+          <form method="post" action="/t/{{ j.id }}/retry" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <button class="link small" type="submit">Reintentar</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
     {% endfor %}

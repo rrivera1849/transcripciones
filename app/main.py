@@ -360,6 +360,19 @@ def turn_speaker(request: Request, job_id: str, index: int,
     return _turns_response(request, session, job_id)
 
 
+@app.post("/t/{job_id}/retry")
+def retry_job(request: Request, job_id: str, session: dict = Depends(current_session),
+              csrf_token: str = Form(...)):
+    csrf_ok(request, session, csrf_token)
+    with db.connect() as conn:
+        job = _job_or_404(conn, job_id)
+        audio_there = job["audio_path"] and Path(job["audio_path"]).exists()
+        if job["status"] == "error" and audio_there and job["received_bytes"] == job["size_bytes"]:
+            db.update_job(conn, job_id, status="queued", stage="En cola", error=None,
+                          modal_call_id=None)
+    return RedirectResponse("/", status_code=303)
+
+
 @app.post("/t/{job_id}/title")
 def rename_job(request: Request, job_id: str, session: dict = Depends(current_session),
                title: str = Form(...), csrf_token: str = Form(...)):

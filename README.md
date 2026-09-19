@@ -10,7 +10,9 @@ and `docs/SETUP.md` for the accounts you need.
 uv sync --group dev
 uv run python scripts/add_user.py mama            # prints a generated password
 cp .env.example .env                              # set MODAL_TOKEN_ID/SECRET; TRANSCRIBER=modal
-uv run modal deploy modal_app.py                  # once, from this laptop
+uv run modal deploy modal_app.py                  # REQUIRED once per code change: creates the
+                                                  # persistent app the worker looks up by name
+                                                  # (`modal run` alone is temporary and won't do)
 uv run python -m app                              # web + worker; open http://127.0.0.1:8000
 ```
 

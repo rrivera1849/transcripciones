@@ -188,3 +188,43 @@ def test_search_across_hearings_is_accent_insensitive(client, tmp_path):
     with db.connect() as conn:
         db.delete_job(conn, job_id)
     assert "No se encontró" in client.get("/buscar", params={"q": "venia"}).text
+
+
+def test_retry_after_error_and_friendly_modal_message(client, tmp_path):
+    from app import db
+    from app.worker import Worker, _friendly
+
+    class Broken:
+        def submit(self, job):
+            raise RuntimeError("Lookup failed for Cls 'Transcriber': App 'transcripciones' not found in environment 'main'.")
+
+    login(client)
+    job_id = upload(client, _make_wav(tmp_path / "a.wav"))
+    Worker(Broken()).tick()
+    home = client.get("/").text
+    assert "Reintentar" in home and "No se pudo transcribir" in home
+
+    r = client.post(f"/t/{job_id}/retry", data={"csrf_token": csrf_of(client)}, follow_redirects=False)
+    assert r.status_code == 303
+    with db.connect() as conn:
+        job = db.get_job(conn, job_id)
+    assert job["status"] == "queued" and job["error"] is None
+
+    class NotFoundError(Exception):
+        pass
+
+    assert "modal deploy" in _friendly(NotFoundError("App 'transcripciones' not found in environment 'main'."))
+
+
+def test_dotenv_loader(tmp_path, monkeypatch):
+    from app.config import load_dotenv
+
+    monkeypatch.delenv("DOTENV_TEST_A", raising=False)
+    monkeypatch.setenv("DOTENV_TEST_B", "real")
+    env = tmp_path / ".env"
+    env.write_text("# comment\nDOTENV_TEST_A=hello world # trailing\nDOTENV_TEST_B=file\nBAD LINE\n")
+    load_dotenv(env)
+    import os
+
+    assert os.environ["DOTENV_TEST_A"] == "hello world"
+    assert os.environ["DOTENV_TEST_B"] == "real"  # real env wins

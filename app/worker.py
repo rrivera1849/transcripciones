@@ -175,7 +175,13 @@ class Worker:
 
 
 def _friendly(e: Exception) -> str:
-    msg = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
+    name = type(e).__name__
+    msg = str(e).strip().splitlines()[0] if str(e).strip() else name
+    if name == "NotFoundError" and "not found in environment" in msg:
+        return ("El servicio de transcripción no está desplegado en Modal. "
+                "Ejecuta `uv run modal deploy modal_app.py` y pulsa Reintentar.")
+    if name == "AuthError" or "token" in msg.lower() and "modal" in msg.lower():
+        return "Faltan o son incorrectas las credenciales de Modal (MODAL_TOKEN_ID / MODAL_TOKEN_SECRET)."
     return f"No se pudo transcribir: {msg[:300]}"
 
 
