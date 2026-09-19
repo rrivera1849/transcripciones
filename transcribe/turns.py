@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from . import Segment, Transcript
+from . import Segment, Transcript, Word
 from .prompt import default_speaker_name
 
 # Start a new paragraph for the same speaker after this much silence.
@@ -19,6 +19,10 @@ MIN_SEGMENT_S = 0.3
 # runs of one repeated token inside a segment ("no, no, no, no, ...").
 MAX_REPEATED_SEGMENTS = 2
 MAX_REPEATED_TOKENS = 3
+# A word is "doubtful" when the aligner's score is below this. Short function
+# words (a, y, de) score low even when right, so only flag longer words.
+LOW_SCORE = 0.3
+LOW_SCORE_MIN_LETTERS = 4
 
 _WS = re.compile(r"\s+")
 
@@ -31,6 +35,9 @@ class Turn:
     text: str
     seg_from: int = 0  # index range into the *cleaned* segment list (inclusive)
     seg_to: int = 0
+    # Aligned words, only when every segment in the turn still carries them and
+    # they reproduce `text` exactly (edited turns lose them). Empty otherwise.
+    words: list[Word] = field(default_factory=list)
 
 
 def clean_text(text: str) -> str:
@@ -77,11 +84,17 @@ def clean_segments(segments: list[Segment]) -> list[Segment]:
     return out
 
 
+def _words_match(seg: Segment) -> bool:
+    return bool(seg.words) and clean_text(" ".join(w.word for w in seg.words)) == seg.text
+
+
 def group_turns(segments: list[Segment]) -> list[Turn]:
     """Merge consecutive same-speaker segments into readable turns."""
     turns: list[Turn] = []
+    intact: list[bool] = []  # per turn: do the words still reproduce the text?
     for i, seg in enumerate(clean_segments(segments)):
         text = seg.text
+        ok = _words_match(seg)
         gap = seg.start - turns[-1].end if turns else 0.0
         too_long = turns and (seg.end - turns[-1].start) > MAX_TURN_S and gap >= MIN_BREAK_GAP_S
         if (
@@ -94,9 +107,52 @@ def group_turns(segments: list[Segment]) -> list[Turn]:
             last.text = f"{last.text} {text}"
             last.end = max(last.end, seg.end)
             last.seg_to = i
+            last.words.extend(seg.words)
+            intact[-1] = intact[-1] and ok
         else:
-            turns.append(Turn(seg.speaker, seg.start, seg.end, text, i, i))
+            turns.append(Turn(seg.speaker, seg.start, seg.end, text, i, i, list(seg.words)))
+            intact.append(ok)
+    for t, good in zip(turns, intact, strict=True):
+        if not good:
+            t.words = []
     return turns
+
+
+def _letters(word: str) -> int:
+    return len(re.sub(r"[\W_]", "", word))
+
+
+def is_doubtful(word: Word) -> bool:
+    return (
+        word.score is not None
+        and word.score < LOW_SCORE
+        and _letters(word.word) >= LOW_SCORE_MIN_LETTERS
+    )
+
+
+def turn_spans(turn: Turn) -> list[tuple[str, Word | None]]:
+    """Split a turn's text into (text, doubtful_word) runs for rendering.
+
+    Consecutive confident words are merged into one span with `None`; each
+    doubtful word gets its own span carrying the Word (for its timestamp).
+    Returns [] when the turn has no usable word alignment.
+    """
+    if not turn.words:
+        return []
+    spans: list[tuple[str, Word | None]] = []
+    for w in turn.words:
+        sep = " " if spans else ""
+        if is_doubtful(w):
+            if spans and spans[-1][1] is None:
+                spans[-1] = (spans[-1][0] + sep, None)
+            elif spans:
+                spans.append((sep, None))  # keep doubtful spans to the word itself
+            spans.append((w.word, w))
+        elif spans and spans[-1][1] is None:
+            spans[-1] = (spans[-1][0] + sep + w.word, None)
+        else:
+            spans.append((sep + w.word, None))
+    return spans
 
 
 def replace_turn_text(segments: list[Segment], turn: Turn, new_text: str) -> list[Segment]:

@@ -41,6 +41,8 @@ ROLE_SUGGESTIONS = [
     "Lcda. de la defensa",
     "Acusado",
     "Acusada",
+    "Peticionaria",
+    "Peticionado",
     "Testigo",
     "Perito",
     "Alguacil",

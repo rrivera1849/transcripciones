@@ -122,3 +122,36 @@ def test_needs_playback_copy_rules():
     assert needs_playback_copy({"codec": "pcm_s16le", "bit_rate": 256_000, "has_video": False})
     assert needs_playback_copy({"codec": "mp3", "bit_rate": 64_000, "has_video": False})
     assert needs_playback_copy({"codec": "aac", "bit_rate": 0, "has_video": False})  # unknown rate
+
+
+def _seg(start, end, words, speaker="SPEAKER_00"):
+    from transcribe import Segment, Word
+
+    ws = [Word(w, start + i * 0.5, start + i * 0.5 + 0.4, sc, speaker) for i, (w, sc) in enumerate(words)]
+    return Segment(start, end, " ".join(w for w, _ in words), speaker, ws)
+
+
+def test_turn_spans_flag_only_long_low_score_words():
+    from transcribe.turns import group_turns, turn_spans
+
+    segs = [
+        _seg(0.0, 2.0, [("Buenas", 0.9), ("tardes,", 0.95), ("a", 0.05), ("todos.", 0.2)]),
+        _seg(2.2, 4.0, [("Vamos", 0.1), ("a", 0.9), ("comenzar.", 0.8)]),
+    ]
+    turns = group_turns(segs)
+    assert len(turns) == 1 and turns[0].text == "Buenas tardes, a todos. Vamos a comenzar."
+    spans = turn_spans(turns[0])
+    assert "".join(text for text, _ in spans) == turns[0].text
+    doubtful = [text for text, w in spans if w is not None]
+    assert doubtful == ["todos.", "Vamos"]  # "a" is short and skipped even at 0.05
+    assert [w.start for _, w in spans if w is not None] == [1.5, 2.2]
+
+
+def test_edited_turn_loses_word_alignment():
+    from transcribe.turns import group_turns, replace_turn_text, turn_spans
+
+    segs = [_seg(0.0, 2.0, [("Buenas", 0.1), ("tardes.", 0.9)])]
+    turn = group_turns(segs)[0]
+    assert turn_spans(turn)
+    edited = group_turns(replace_turn_text(segs, turn, "Buenos días."))[0]
+    assert edited.text == "Buenos días." and turn_spans(edited) == []

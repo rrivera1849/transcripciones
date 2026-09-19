@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Transcripciones{% endblock %}</title>
+  <title>{% block title %}La Transcriptora{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js" defer></script>
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{ csrf }}"}'>
   <header class="top">
-    <a class="brand" href="/">Transcripciones</a>
+    <a class="brand" href="/">La Transcriptora</a>
     {% if session %}
     <form method="post" action="/logout" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">

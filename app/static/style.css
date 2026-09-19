@@ -44,11 +44,11 @@ table.jobs th { font-size:14px; color:var(--muted); font-weight:600; }
 .title-input { font-size:24px; font-weight:700; flex:1; min-width:260px; border-color:transparent; background:transparent; padding-left:0; }
 .title-input:focus { border-color: var(--line); background:#fff; padding-left:12px; }
 .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; align-items:center; }
-.t-layout { display:grid; grid-template-columns: 260px 1fr; gap:20px; align-items:start; }
-@media (max-width: 800px) { .t-layout { grid-template-columns: 1fr; } .speakers { position: static; } }
-.speakers { position: sticky; top: 12px; }
+.t-layout { display:grid; grid-template-columns: 300px minmax(0, 1fr); gap:20px; align-items:start; }
+@media (max-width: 800px) { .t-layout { grid-template-columns: minmax(0, 1fr); } .speakers { position: static; } .controls .keys { display:none; } }
+.speakers { position: sticky; top: 12px; min-width: 0; }
 .speaker { display:flex; align-items:center; gap:10px; margin:8px 0; }
-.speaker input { flex:1; min-width:0; }
+.speaker input { flex:1 1 0; width:0; min-width:0; }
 .swatch { width:16px; height:16px; border-radius:50%; flex:none; }
 .merge { margin-top: 14px; } .merge summary { cursor:pointer; color:var(--brand); }
 .transcript { display:flex; flex-direction:column; gap:6px; }
@@ -76,3 +76,26 @@ mark.current { background: #f59e0b; color: #fff; }
 .find button { padding: 6px 10px; }
 .ok { color: #166534; background: #dcfce7; padding: 8px 12px; border-radius: 8px; }
 .danger-link { color: var(--danger); }
+
+/* doubtful words (low alignment score) */
+.lowc { background:#fff1cc; border-bottom:2px dotted #d97706; border-radius:2px; cursor:pointer; }
+.lowc:hover { background:#ffe19a; }
+.hide-lowc .lowc { background:none; border-bottom:none; cursor:text; }
+.lowc-toggle { display:flex; align-items:center; gap:4px; white-space:nowrap; color:var(--muted); }
+.lowc-toggle input { margin:0; }
+@media (max-width: 800px) { .lowc-toggle { width:100%; } }
+
+/* speaker roles */
+.speaker .role-pick { flex:none; width:74px; padding:6px 4px; font-size:13px; }
+.suggest { margin:-2px 0 10px 26px; color:var(--muted); }
+.suggest b { color: var(--ink); }
+
+/* player controls */
+.controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; max-width:1100px; margin:0 auto 8px; }
+.controls button { padding:6px 12px; }
+.controls label { display:flex; align-items:center; gap:6px; color:var(--muted); }
+.controls select { padding:4px 6px; }
+.controls .keys { color:var(--muted); flex-basis:100%; }
+.controls .keys summary { cursor:pointer; color:var(--brand); }
+.turn.looping { box-shadow: 0 0 0 2px #f59e0b inset; }
+.wrap { padding-bottom: 170px; }

@@ -19,7 +19,7 @@
       </form>
       {% endif %}
     </div>
-    <p class="turn-text">{{ t.text }}</p>
+    <p class="turn-text">{% if t.spans %}{% for text, w in t.spans %}{% if w %}{% set at = (w.start - 1.0) if w.start is not none else t.start %}<span class="lowc" data-seek="{{ ([0.0, at]|max)|round(2) }}" title="Palabra dudosa · clic para escucharla">{{ text }}</span>{% else %}{{ text }}{% endif %}{% endfor %}{% else %}{{ t.text }}{% endif %}</p>
     <form class="turn-edit" hidden hx-post="/t/{{ job.id }}/turn/{{ t.i }}/text" hx-target="#turns" hx-swap="outerHTML">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
       <textarea name="text" rows="4">{{ t.text }}</textarea>

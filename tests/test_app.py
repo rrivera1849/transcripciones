@@ -358,3 +358,54 @@ def test_playback_copy_made_for_wav_but_not_for_compact_aac(client, tmp_path):
 
     r = client.get(f"/t/{wav_job}/audio")
     assert r.status_code == 200 and r.headers["content-type"].startswith("audio/")
+
+
+def test_doubtful_words_role_picker_and_suggestions_render(client, tmp_path):
+    from app.worker import FakeBackend, Worker
+
+    login(client)
+    job_id = upload(client, _make_wav(tmp_path / "v.wav", seconds=1.0), title="Vista", min_speakers=2)
+
+    def seg(start, text, speaker, scores):
+        words = text.split()
+        return {
+            "start": start, "end": start + 1.5, "text": text, "speaker": speaker,
+            "words": [
+                {"word": w, "start": start + i * 0.3, "end": start + i * 0.3 + 0.2, "score": sc, "speaker": speaker}
+                for i, (w, sc) in enumerate(zip(words, scores, strict=True))
+            ],
+        }
+
+    result = {"segments": [
+        seg(0.0, "Ha lugar. Puede continuar.", "SPEAKER_00", [0.9, 0.9, 0.95, 0.9]),
+        seg(2.0, "Ha lugar. Adelante, licenciado.", "SPEAKER_00", [0.9, 0.9, 0.9, 0.9]),
+        seg(4.0, "Yo estaba en Morovis.", "SPEAKER_01", [0.9, 0.9, 0.9, 0.12]),
+        seg(6.0, "No recuerdo.", "SPEAKER_01", [0.9, 0.9]),
+        seg(8.0, "No sé.", "SPEAKER_01", [0.9, 0.9]),
+        seg(10.0, "No, señor.", "SPEAKER_01", [0.9, 0.9]),
+    ], "language": "es", "duration": 12.0}
+    Worker(FakeBackend(result)).tick()
+
+    page = client.get(f"/t/{job_id}").text
+    # doubtful word: low score and long enough; click seeks one second before it
+    assert page.count('class="lowc"') == 1
+    assert 'data-seek="3.9"' in page and ">Morovis.</span>" in page
+    assert 'id="lowc-toggle"' in page and "(1)" in page
+    # role suggestions from cue phrases, with a one-click "Usar"
+    assert "¿Es <b>Juez/a</b>?" in page and "«ha lugar» 2 veces" in page
+    assert "¿Es <b>Testigo</b>?" in page
+    assert page.count('class="role-pick"') == 2 and "Peticionaria" in page
+    # player controls and shortcuts
+    for el in ('id="playpause"', 'id="speed"', 'id="loop"', "F8"):
+        assert el in page
+
+    # after renaming, the suggestion for that voice disappears
+    tok = {"csrf_token": csrf_of(client)}
+    r = client.post(f"/t/{job_id}/speaker/rename", data={"speaker": "SPEAKER_00", "name": "Jueza", **tok})
+    assert r.status_code == 200
+    page = client.get(f"/t/{job_id}").text
+    assert "¿Es <b>Juez/a</b>?" not in page and "¿Es <b>Testigo</b>?" in page
+
+    # editing a paragraph drops its word alignment, so nothing is flagged there any more
+    r = client.post(f"/t/{job_id}/turn/1/text", data={"text": "Yo estaba en Morovis. No recuerdo.", **tok})
+    assert r.status_code == 200 and 'class="lowc"' not in r.text

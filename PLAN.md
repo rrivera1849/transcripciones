@@ -370,15 +370,23 @@ compose up --build` on the VPS is the test. Server side: yours.
 - [ ] Watch her do one hearing end-to-end without help. Fix what confused her
       before adding features.
 
-### Phase 5 — Later, only if she asks
+### Phase 5 — Proofreading speed-ups (agreed 2026-09-19)
 
-- Per-case folders and a "same speakers as last hearing" hint.
-- Email when a long transcript finishes.
-- Summary / key points (requires an explicit decision on sending court text
-  to an external LLM, or running a local one on Modal).
-- Record directly in the browser.
-- Export with line numbers / legal transcript formatting if she needs a
-  specific layout.
+- [x] Doubtful-word highlighting: words the aligner scored below 0.3 (and at
+      least 4 letters, since short function words score low even when right)
+      get a dotted underline; click one to hear it. Toggle in the find bar.
+      ~2 % of words on the sample hearing.
+- [x] Player controls and keyboard shortcuts: −5 s / play-pause / +5 s
+      buttons, speed 0.75–1.5×, "repetir párrafo" loop; space, arrows,
+      Shift+arrows (30 s), −/+ speed, R loop; F7/F8/F9 also work inside the
+      edit box; Ctrl+Enter saves, Esc cancels; resuming backs up 1.5 s.
+- [x] Role presets: a "Rol…" picker next to each voice, plus a suggestion
+      ("¿Es Jueza? Esta voz dice «ha lugar» 6 veces · Usar") from cue
+      phrases in `transcribe/roles.py`. Only for voices not yet renamed;
+      only when one voice clearly outscores the rest.
+- [x] App renamed to "La Transcriptora" to match the domain.
+
+See §11 for everything else that came out of the same brainstorm.
 
 ---
 
@@ -457,3 +465,58 @@ required; hosting is VPS + Modal.
 3. Phase 2 — the local web app. You use it on your laptop.
 4. Real samples arrive → run them, tune.
 5. Only then phase 3: VPS + Cloudflare.
+
+---
+
+## 11. Backlog (ideas, not committed)
+
+From the 2026-09-19 brainstorm. Nothing here is scheduled; pick by what Mom
+actually stumbles on. Effort: S = hours, M = a day or two, L = more.
+
+### Editing
+
+| Idea | Effort | Notes |
+|---|---|---|
+| Split a paragraph at the cursor | S | Mirror of "Unir con el anterior"; fixes a missed speaker change. |
+| Find and replace across the hearing | S | A surname heard wrong forty times, fixed once. |
+| Undo / revision history | M | Keep every saved version of a transcript; "Restaurar". |
+| Font-size and high-contrast toggle | S | Per-account setting; accessibility. |
+| Redaction | M | Mark names / minors; exports print `[REDACTADO]`, editor keeps the text. |
+| Speaker suggestions from the *previous* hearing of the same case | S | Needs case files (below). |
+
+### Transcription quality
+
+| Idea | Effort | Notes |
+|---|---|---|
+| Case files (expedientes) | M | Group hearings by case number; names, glossary and speaker-count hint carry over. |
+| Reusable glossaries | S | Saved vocabulary per court / judge / case; "añadir al glosario" on a correction. |
+| Re-transcribe a span | M | Select minutes 42–47, change hint or glossary, re-run only that slice on the GPU. |
+| Fast vs. careful mode | S | Smaller model for a rough draft in a third of the time. |
+| Alternative diarizer | L | Only if community-1 stays weak on real hearings after tuning. |
+
+### LLM-assisted (needs an explicit decision on sending court text to an API)
+
+| Idea | Notes |
+|---|---|
+| Role labeling from content | Model reads the transcript, proposes judge/fiscal/defense per voice, flags turns whose label looks wrong. Attacks the weakest stage directly. |
+| Resumen de la vista | One page: who testified, rulings, motions, next date; timestamps link into the transcript. |
+| Ask the hearing a question | Answers with quotes and timestamps. |
+| English translation | For anything headed to the federal court in San Juan. |
+| Chapter index | "Testimonio del perito", "Argumentos de cierre" as a clickable outline. |
+
+Cost is cents per hearing. Alternative that keeps data on our infrastructure:
+an open-weights model on Modal, at some quality cost.
+
+### Workflow and operations
+
+| Idea | Effort | Notes |
+|---|---|---|
+| Notify when done (email / browser push) | S | Upload and walk away. |
+| Batch upload | S | Drop several files; they queue. |
+| Trash with 7-day restore | S | Instead of immediate delete. |
+| Formatted court transcript export | M | Word template: case caption, numbered lines, page numbers, certification page ("transcripción de la prueba oral"). Turns a draft into a deliverable. |
+| Speaking-time per participant; waveform under the player | S | Nice-to-have. |
+| Cost dashboard | S | Modal minutes and dollars this month. |
+| Install as an app (PWA) | S | Phone / tablet home-screen icon. |
+| Per-user private workspaces, optional sharing | S–M | Today everyone sees everything (by design). Filter list/search/access by `created_by`; "Compartir con…" if wanted. |
+| Cloudflare Access in front of the login | S | Second wall; free for a handful of users. |

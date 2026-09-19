@@ -17,6 +17,7 @@ from transcribe import Transcript
 from transcribe.audio import ACCEPTED_EXTENSIONS, probe
 from transcribe.export import to_docx, to_srt, to_txt
 from transcribe.prompt import ROLE_SUGGESTIONS
+from transcribe.roles import suggest_roles
 from transcribe.turns import (
     clean_segments,
     fmt_ts,
@@ -26,6 +27,7 @@ from transcribe.turns import (
     replace_turn_text,
     set_turn_speaker,
     speaker_names,
+    turn_spans,
 )
 
 from . import auth, config, db
@@ -296,8 +298,13 @@ def _load(conn, job_id: str, session: dict):
 
 def _speaker_ctx(transcript: Transcript, overrides: dict) -> list[dict]:
     names = speaker_names(transcript, overrides)
+    suggested = suggest_roles(transcript)
     return [
-        {"id": sid, "name": names[sid], "color": SPEAKER_COLORS[i % len(SPEAKER_COLORS)]}
+        {
+            "id": sid, "name": names[sid], "color": SPEAKER_COLORS[i % len(SPEAKER_COLORS)],
+            # Only propose a role while the voice still has its default name.
+            "suggestion": None if overrides.get(sid) else suggested.get(sid),
+        }
         for i, sid in enumerate(transcript.speakers())
     ]
 
@@ -312,10 +319,12 @@ def _turns_ctx(transcript: Transcript, overrides: dict) -> dict:
             "name": by_id[t.speaker]["name"] if t.speaker in by_id else "",
             "color": by_id[t.speaker]["color"] if t.speaker in by_id else "#666",
             "can_merge_up": i > 0 and grouped[i - 1].speaker == t.speaker,
+            "spans": turn_spans(t),
         }
         for i, t in enumerate(grouped)
     ]
-    return {"turns": turns, "speakers": speakers}
+    doubtful = sum(1 for t in turns for _, w in t["spans"] if w is not None)
+    return {"turns": turns, "speakers": speakers, "doubtful": doubtful}
 
 
 @app.get("/t/{job_id}", response_class=HTMLResponse)
