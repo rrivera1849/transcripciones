@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import math
 import os
 import time
 from pathlib import Path
@@ -98,6 +99,21 @@ def load_models(
         _diarize = DiarizationPipeline(model_name=DIARIZE_MODEL, token=token, device=device)
 
 
+def _num(x) -> float | None:
+    """numpy/pandas scalars -> plain float (None stays None, NaN -> None)."""
+    if x is None:
+        return None
+    try:
+        f = float(x)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(f) else f
+
+
+def _str(x) -> str | None:
+    return None if x is None or (isinstance(x, float) and math.isnan(x)) else str(x)
+
+
 def _is_oom(e: Exception) -> bool:
     return "out of memory" in str(e).lower()
 
@@ -166,19 +182,21 @@ def transcribe_file(
     timing["total_s"] = round(time.time() - t0, 1)
     log.info("done: %s", _gpu_mem())
 
+    # Everything below must be plain Python: the result is pickled back to a host
+    # that has neither numpy nor pandas installed.
     segments = [
         Segment(
-            start=float(s["start"]),
-            end=float(s["end"]),
+            start=_num(s["start"]) or 0.0,
+            end=_num(s["end"]) or 0.0,
             text=str(s.get("text", "")).strip(),
-            speaker=s.get("speaker"),
+            speaker=_str(s.get("speaker")),
             words=[
                 Word(
-                    word=w.get("word", ""),
-                    start=w.get("start"),
-                    end=w.get("end"),
-                    score=w.get("score"),
-                    speaker=w.get("speaker"),
+                    word=str(w.get("word", "")),
+                    start=_num(w.get("start")),
+                    end=_num(w.get("end")),
+                    score=_num(w.get("score")),
+                    speaker=_str(w.get("speaker")),
                 )
                 for w in s.get("words", [])
             ],

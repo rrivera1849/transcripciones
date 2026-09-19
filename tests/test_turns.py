@@ -78,3 +78,18 @@ def test_build_prompt_appends_vocabulary():
     assert build_prompt(None) == INITIAL_PROMPT
     p = build_prompt("Morovis, Ciales, Lcda. Torres")
     assert p.startswith(INITIAL_PROMPT) and p.endswith("Morovis, Ciales, Lcda. Torres.")
+
+
+def test_pipeline_output_is_plain_python():
+    """The Modal result is unpickled on a host without numpy: no numpy scalars allowed."""
+    import json
+
+    from transcribe.whisperx_pipeline import _num, _str
+
+    class FakeFloat64(float):  # stands in for numpy.float64 (a float subclass)
+        pass
+
+    assert type(_num(FakeFloat64(1.5))) is float and _num(None) is None
+    assert _num(float("nan")) is None and _num("x") is None
+    assert _str(float("nan")) is None and _str("SPEAKER_01") == "SPEAKER_01"
+    json.dumps({"a": _num(FakeFloat64(2.0)), "b": _str(None)})

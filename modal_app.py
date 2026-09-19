@@ -31,6 +31,13 @@ hf_secret = modal.Secret.from_name("huggingface")
 volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 
 
+def _builtin(o):
+    """json.dumps fallback for numpy scalars and similar."""
+    if hasattr(o, "item"):
+        return o.item()
+    return str(o)
+
+
 def _download_models() -> None:
     """Bake all weights into the image so cold starts don't download 4 GB."""
     import nltk
@@ -116,7 +123,10 @@ class Transcriber:
         except OSError as e:
             print(f"[{job_id}] cleanup warning: {e}")
         wav.unlink(missing_ok=True)
-        return transcript.to_dict()
+        # JSON round-trip: guarantees no numpy/pandas objects reach the app host.
+        import json
+
+        return json.loads(json.dumps(transcript.to_dict(), default=_builtin))
 
 
 @app.function(schedule=modal.Period(days=1), volumes={AUDIO_MOUNT: volume})

@@ -2,6 +2,15 @@
 
 Running notes from real runs. Newest first.
 
+## 2026-09-19 — "Deserialization failed because the 'numpy' module is not available"
+
+The worker on the laptop failed to read a finished Modal result: WhisperX
+returns word `start`/`end`/`score` as numpy floats and diarization fields via
+pandas, Modal pickles them as such, and the app host has neither library.
+Fix: the pipeline now coerces every number to a Python float and every label
+to `str` (NaN → None), and the Modal function JSON-round-trips its return
+value as a guarantee. Requires `modal deploy`.
+
 ## 2026-09-19 — CUDA out-of-memory on the second job in a warm container
 
 Second hearing through the web app failed in WhisperX ASR with "CUDA failed
