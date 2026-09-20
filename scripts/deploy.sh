@@ -3,7 +3,8 @@
 #   sudo /opt/transcripciones/scripts/deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-BRANCH="${DEPLOY_BRANCH:-main}"
+# Default to whatever branch the VPS already tracks (the repo has no "main").
+BRANCH="${DEPLOY_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
 git fetch --quiet origin "$BRANCH"
 git checkout --quiet "$BRANCH"
 git reset --quiet --hard "origin/$BRANCH"

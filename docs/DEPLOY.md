@@ -79,8 +79,11 @@ stop the stack, replace `data/app.sqlite3`, start it.
 Updating the app after a new commit:
 
 ```bash
-DEPLOY_BRANCH=<deploy branch> /opt/transcripciones/scripts/deploy.sh
+/opt/transcripciones/scripts/deploy.sh
 ```
+
+It updates the branch the VPS already has checked out. To switch branches,
+set `DEPLOY_BRANCH=<branch>` for that one run.
 
 Changes to `modal_app.py` or `transcribe/` also need `uv run modal deploy
 modal_app.py` from your laptop.
