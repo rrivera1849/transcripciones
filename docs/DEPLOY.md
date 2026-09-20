@@ -49,7 +49,7 @@ docker compose logs cloudflared | tail -5   # look for "Registered tunnel connec
 ## 4. Create the accounts
 
 ```bash
-docker compose exec web python scripts/add_user.py mama        # prints the password
+docker compose exec web python scripts/add_user.py mama        # asks for a password (Enter = generate one)
 docker compose exec web python scripts/add_user.py <other person>
 ```
 
