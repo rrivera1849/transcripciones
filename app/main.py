@@ -6,7 +6,9 @@ import json
 import mimetypes
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
@@ -24,9 +26,11 @@ from transcribe.turns import (
     group_turns,
     merge_speakers,
     merge_turns,
+    replace_text,
     replace_turn_text,
     set_turn_speaker,
     speaker_names,
+    split_turn,
     turn_spans,
 )
 
@@ -127,9 +131,35 @@ def logout(request: Request, session: dict = Depends(current_session),
 MIN_PASSWORD_LEN = 8
 
 
+def _account(request: Request, session: dict, **ctx) -> HTMLResponse:
+    with db.connect() as conn:
+        user = db.get_user(conn, session["u"])
+    ctx.setdefault("email", (user["email"] if user else "") or "")
+    ctx.setdefault("error", None)
+    ctx.setdefault("ok", False)
+    ctx.setdefault("email_ok", False)
+    ctx["mail_enabled"] = bool(config.SMTP_HOST)
+    return render(request, "account.html", session, **ctx)
+
+
 @app.get("/cuenta", response_class=HTMLResponse)
 def account_page(request: Request, session: dict = Depends(current_session)):
-    return render(request, "account.html", session, error=None, ok=False)
+    return _account(request, session)
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@app.post("/cuenta/correo", response_class=HTMLResponse)
+def set_email(request: Request, session: dict = Depends(current_session),
+              email: str = Form(""), csrf_token: str = Form(...)):
+    csrf_ok(request, session, csrf_token)
+    email = email.strip()[:200]
+    if email and not _EMAIL_RE.match(email):
+        return _account(request, session, email=email, error="Ese correo no parece válido.")
+    with db.connect() as conn:
+        db.set_email(conn, session["u"], email)
+    return _account(request, session, email=email, email_ok=True)
 
 
 @app.post("/cuenta", response_class=HTMLResponse)
@@ -150,7 +180,7 @@ def change_password(request: Request, session: dict = Depends(current_session),
         else:
             db.set_password(conn, session["u"], auth.hash_password(new))
             error = None
-    return render(request, "account.html", session, error=error, ok=error is None)
+    return _account(request, session, error=error, ok=error is None)
 
 
 # --- home + job list -----------------------------------------------------
@@ -332,11 +362,12 @@ def transcript_page(request: Request, job_id: str, q: str = "",
                     session: dict = Depends(current_session)):
     with db.connect() as conn:
         job, transcript, overrides = _load(conn, job_id, session)
+        revisions = len(db.list_revisions(conn, job_id))
     ctx = _turns_ctx(transcript, overrides)
     audio_ok = job["audio_path"] and Path(job["audio_path"]).exists() and not job["audio_deleted_at"]
     return render(request, "transcript.html", session, job=_job_view(job), audio_ok=audio_ok,
                   duration=fmt_ts(transcript.duration or 0), q=q.strip()[:200],
-                  retention_days=config.RETENTION_DAYS, **ctx)
+                  retention_days=config.RETENTION_DAYS, revisions=revisions, **ctx)
 
 
 def _turns_response(request: Request, session: dict, job_id: str) -> HTMLResponse:
@@ -354,7 +385,8 @@ def speaker_rename(request: Request, job_id: str, session: dict = Depends(curren
         _, transcript, overrides = _load(conn, job_id, session)
         if speaker in transcript.speakers():
             overrides[speaker] = name.strip()[:60]
-            db.update_transcript(conn, job_id, speaker_names=overrides, edited_by=session["u"])
+            db.update_transcript(conn, job_id, speaker_names=overrides, edited_by=session["u"],
+                                 action=f"nombrar hablante «{overrides[speaker]}»")
     return _turns_response(request, session, job_id)
 
 
@@ -369,7 +401,8 @@ def speaker_merge(request: Request, job_id: str, session: dict = Depends(current
             merge_speakers(transcript, keep, absorb)
             overrides.pop(absorb, None)
             db.update_transcript(conn, job_id, data=transcript.to_dict(),
-                                 speaker_names=overrides, edited_by=session["u"])
+                                 speaker_names=overrides, edited_by=session["u"],
+                                 action="unir dos hablantes")
     return _turns_response(request, session, job_id)
 
 
@@ -383,7 +416,8 @@ def turn_text(request: Request, job_id: str, index: int,
         turns = group_turns(transcript.segments)
         if 0 <= index < len(turns) and text.strip():
             transcript.segments = replace_turn_text(transcript.segments, turns[index], text)
-            db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"])
+            db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"],
+                                 action=f"editar el párrafo de {fmt_ts(turns[index].start)}")
     return _turns_response(request, session, job_id)
 
 
@@ -396,7 +430,8 @@ def turn_merge_up(request: Request, job_id: str, index: int,
         turns = group_turns(transcript.segments)
         if 1 <= index < len(turns) and turns[index - 1].speaker == turns[index].speaker:
             transcript.segments = merge_turns(transcript.segments, turns[index - 1], turns[index])
-            db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"])
+            db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"],
+                                 action=f"unir párrafos en {fmt_ts(turns[index].start)}")
     return _turns_response(request, session, job_id)
 
 
@@ -410,8 +445,86 @@ def turn_speaker(request: Request, job_id: str, index: int,
         turns = group_turns(transcript.segments)
         if 0 <= index < len(turns) and speaker in transcript.speakers():
             transcript.segments = set_turn_speaker(transcript.segments, turns[index], speaker)
-            db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"])
+            db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"],
+                                 action=f"cambiar el hablante en {fmt_ts(turns[index].start)}")
     return _turns_response(request, session, job_id)
+
+
+@app.post("/t/{job_id}/turn/{index}/split", response_class=HTMLResponse)
+def turn_split(request: Request, job_id: str, index: int,
+               session: dict = Depends(current_session),
+               before: str = Form(...), after: str = Form(...), csrf_token: str = Form(...)):
+    csrf_ok(request, session, csrf_token)
+    with db.connect() as conn:
+        _, transcript, _overrides = _load(conn, job_id, session)
+        turns = group_turns(transcript.segments)
+        if 0 <= index < len(turns) and before.strip() and after.strip():
+            transcript.segments = split_turn(transcript.segments, turns[index], before, after)
+            db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"],
+                                 action=f"dividir el párrafo de {fmt_ts(turns[index].start)}")
+    return _turns_response(request, session, job_id)
+
+
+@app.post("/t/{job_id}/replace", response_class=HTMLResponse)
+def replace_all(request: Request, job_id: str, session: dict = Depends(current_session),
+                find: str = Form(...), replace: str = Form(""), csrf_token: str = Form(...)):
+    csrf_ok(request, session, csrf_token)
+    count = 0
+    with db.connect() as conn:
+        _, transcript, _overrides = _load(conn, job_id, session)
+        if find.strip():
+            transcript.segments, count = replace_text(transcript.segments, find[:200], replace[:200])
+            if count:
+                db.update_transcript(conn, job_id, data=transcript.to_dict(), edited_by=session["u"],
+                                     action=f"reemplazar «{find.strip()[:40]}» por «{replace.strip()[:40]}»")
+    resp = _turns_response(request, session, job_id)
+    resp.headers["HX-Trigger"] = json.dumps({"replaced": count})
+    return resp
+
+
+# --- revision history ----------------------------------------------------
+
+def _local_time(iso: str) -> str:
+    try:
+        dt = datetime.fromisoformat(iso).astimezone(ZoneInfo(config.DISPLAY_TZ))
+    except (ValueError, KeyError):
+        return iso
+    return dt.strftime("%d/%m/%Y %H:%M")
+
+
+@app.get("/t/{job_id}/historial", response_class=HTMLResponse)
+def history_partial(request: Request, job_id: str, session: dict = Depends(current_session)):
+    with db.connect() as conn:
+        job = _job_or_404(conn, job_id)
+        revs = db.list_revisions(conn, job_id)
+    for r in revs:
+        r["when"] = _local_time(r["created_at"])
+    return render(request, "_history.html", session, job=_job_view(job), revisions=revs)
+
+
+@app.post("/t/{job_id}/restaurar")
+def restore(request: Request, job_id: str, session: dict = Depends(current_session),
+            rev: int = Form(...), csrf_token: str = Form(...)):
+    csrf_ok(request, session, csrf_token)
+    with db.connect() as conn:
+        _job_or_404(conn, job_id)
+        with db.tx(conn):
+            db.restore_revision(conn, job_id, rev, session["u"])
+    return RedirectResponse(f"/t/{job_id}", status_code=303)
+
+
+@app.post("/t/{job_id}/deshacer")
+def undo(request: Request, job_id: str, session: dict = Depends(current_session),
+         csrf_token: str = Form(...)):
+    """Put back the state before the most recent change."""
+    csrf_ok(request, session, csrf_token)
+    with db.connect() as conn:
+        _job_or_404(conn, job_id)
+        revs = db.list_revisions(conn, job_id)
+        if revs:
+            with db.tx(conn):
+                db.restore_revision(conn, job_id, revs[0]["id"], session["u"])
+    return RedirectResponse(f"/t/{job_id}", status_code=303)
 
 
 @app.post("/t/{job_id}/retry")

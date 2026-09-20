@@ -155,3 +155,40 @@ def test_edited_turn_loses_word_alignment():
     assert turn_spans(turn)
     edited = group_turns(replace_turn_text(segs, turn, "Buenos días."))[0]
     assert edited.text == "Buenos días." and turn_spans(edited) == []
+
+
+def test_split_turn_uses_word_timing_when_available():
+    from transcribe.turns import group_turns, split_turn
+
+    segs = [_seg(10.0, 13.0, [("Buenas", 0.9), ("tardes.", 0.9), ("Vamos", 0.9), ("a", 0.9), ("empezar.", 0.9)])]
+    turn = group_turns(segs)[0]
+    out = split_turn(segs, turn, "Buenas tardes.", "Vamos a empezar.")
+    assert [s.text for s in out] == ["Buenas tardes.", "Vamos a empezar."]
+    # word 2 ends at 10.9, word 3 starts at 11.0 -> cut halfway
+    assert out[0].start == 10.0 and abs(out[0].end - 10.95) < 1e-6 and out[1].end == 13.0
+    assert out[0].speaker == out[1].speaker == "SPEAKER_00"
+    assert len(group_turns(out)) == 2  # the two halves never re-merge
+
+
+def test_split_turn_estimates_time_without_words():
+    from transcribe import Segment
+    from transcribe.turns import group_turns, split_turn
+
+    segs = [Segment(0.0, 10.0, "abcd efgh", "S")]
+    turn = group_turns(segs)[0]
+    out = split_turn(segs, turn, "abcd", "efgh")
+    assert abs(out[0].end - 10 * 4 / 8) < 1e-6
+    import pytest
+
+    with pytest.raises(ValueError):
+        split_turn(segs, turn, "abcd efgh", "   ")
+
+
+def test_replace_text_is_case_insensitive_and_counts():
+    from transcribe import Segment
+    from transcribe.turns import replace_text
+
+    segs = [Segment(0, 1, "La ribera del río. RIBERA.", "S"), Segment(1, 2, "Nada aquí.", "S")]
+    out, n = replace_text(segs, "ribera", "Rivera")
+    assert n == 2 and out[0].text == "La Rivera del río. Rivera." and out[1].text == "Nada aquí."
+    assert replace_text(segs, "   ", "x")[1] == 0

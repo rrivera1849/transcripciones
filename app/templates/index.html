@@ -4,9 +4,9 @@
   <h1>Subir una grabación</h1>
   <form id="upload-form" class="stack" onsubmit="return false">
     <div id="drop" class="drop" tabindex="0">
-      <input id="file" type="file" accept="{{ extensions|join(',') }}" hidden>
+      <input id="file" type="file" accept="{{ extensions|join(',') }}" multiple hidden>
       <div class="drop-text">
-        <strong>Arrastra la grabación aquí</strong> o <button type="button" class="link" id="pick">elígela en tu computadora</button>
+        <strong>Arrastra una o varias grabaciones aquí</strong> o <button type="button" class="link" id="pick">elígelas en tu computadora</button>
         <div class="muted small">Formatos: mp3, m4a, wav, mp4 y otros. Máximo {{ (max_bytes // 1048576) }} MB.</div>
       </div>
       <div id="chosen" class="muted" hidden></div>
@@ -14,6 +14,7 @@
     <div class="row">
       <label class="grow">Título (opcional)
         <input id="title" placeholder="Ej.: Caso 2025-0090, vista 31 de julio">
+        <span id="title-hint" class="muted small" hidden>Con varios archivos se usa el nombre de cada uno.</span>
       </label>
       <label>¿Cuántas personas hablan?
         <input id="speakers" type="number" min="1" max="12" value="{{ default_speakers }}">
@@ -34,6 +35,7 @@
 <section>
   <div class="row between">
     <h2>Transcripciones</h2>
+    <button type="button" class="secondary small" id="notify-btn" hidden title="Recibe un aviso del navegador cuando termine una transcripción, aunque estés en otra pestaña">Avisarme al terminar</button>
     <form method="get" action="/buscar" class="search-form" role="search">
       <input type="search" name="q" placeholder="Buscar una palabra o frase en todas las vistas" aria-label="Buscar">
       <button class="secondary" type="submit">Buscar</button>
@@ -45,4 +47,5 @@
   window.UPLOAD = { chunk: {{ chunk }}, maxBytes: {{ max_bytes }}, csrf: "{{ csrf }}" };
 </script>
 <script src="/static/upload.js" defer></script>
+<script src="/static/notify.js" defer></script>
 {% endblock %}

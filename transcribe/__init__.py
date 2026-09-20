@@ -27,6 +27,8 @@ class Segment:
     text: str
     speaker: str | None = None
     words: list[Word] = field(default_factory=list)
+    # True when the user cut a paragraph here: never merge this segment into the previous one.
+    paragraph: bool = False
 
 
 @dataclass
@@ -59,6 +61,7 @@ class Transcript:
                 text=str(s.get("text", "")).strip(),
                 speaker=s.get("speaker"),
                 words=[Word(**w) for w in s.get("words", [])],
+                paragraph=bool(s.get("paragraph", False)),
             )
             for s in d.get("segments", [])
         ]

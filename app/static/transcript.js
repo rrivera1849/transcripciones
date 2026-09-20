@@ -94,6 +94,17 @@
     }
     const cancel = e.target.closest(".cancel-btn");
     if (cancel) { cancelEdit(cancel.closest(".turn")); return; }
+    const split = e.target.closest(".split-btn");
+    if (split) {
+      const form = split.closest(".turn-edit"), ta = form.querySelector("textarea");
+      const pos = ta.selectionStart, before = ta.value.slice(0, pos), after = ta.value.slice(pos);
+      if (!before.trim() || !after.trim()) { alert("Haz clic dentro del texto, en el punto donde quieres cortar, y vuelve a pulsar «Dividir aquí»."); ta.focus(); return; }
+      htmx.ajax("POST", split.dataset.url, {
+        source: form, target: "#turns", swap: "outerHTML",
+        values: { before, after, csrf_token: form.querySelector("input[name=csrf_token]").value },
+      });
+      return;
+    }
     const use = e.target.closest(".use-suggestion");
     if (use) {
       const p = use.closest(".suggest"), form = document.querySelector(`.speaker[data-speaker="${p.dataset.speaker}"]`);
@@ -201,6 +212,34 @@
     if (find.value) highlight(find.value);
   }
   document.body.addEventListener("htmx:afterSwap", () => { applyLowc(); if (find && find.value) highlight(find.value); });
+
+  // ---- find & replace across the whole hearing ----
+  const replaceToggle = document.getElementById("replace-toggle"), replaceForm = document.getElementById("replace-form");
+  if (replaceToggle && replaceForm) {
+    const findField = document.getElementById("replace-find"), withField = document.getElementById("replace-with");
+    const result = document.getElementById("replace-result");
+    replaceToggle.addEventListener("click", () => {
+      replaceForm.hidden = !replaceForm.hidden;
+      if (!replaceForm.hidden) { if (!find.value.trim()) { find.focus(); result.textContent = "Escribe primero qué buscar."; } else withField.focus(); }
+    });
+    replaceForm.addEventListener("htmx:confirm", (e) => {
+      e.preventDefault();
+      const q = find.value.trim();
+      if (!q) { find.focus(); result.textContent = "Escribe primero qué buscar."; return; }
+      findField.value = q;
+      if (confirm(`¿Reemplazar «${q}» por «${withField.value}» en toda la transcripción?`)) e.detail.issueRequest(true);
+    });
+    document.body.addEventListener("replaced", (e) => {
+      const n = e.detail.value;
+      result.textContent = n ? `${n} reemplazo${n === 1 ? "" : "s"} hecho${n === 1 ? "" : "s"}.` : "No se encontró nada que reemplazar.";
+      const undo = document.getElementById("undo"); if (n && undo) undo.disabled = false;
+    });
+  }
+  // Any saved edit makes "Deshacer" available.
+  document.body.addEventListener("htmx:afterRequest", (e) => {
+    const undo = document.getElementById("undo");
+    if (undo && e.detail.successful && e.detail.requestConfig.verb === "post") undo.disabled = false;
+  });
 
   const copy = document.getElementById("copy-all");
   if (copy) copy.addEventListener("click", async () => {

@@ -43,6 +43,17 @@ LOGIN_LOCKOUT_S = 15 * 60
 
 DEFAULT_MIN_SPEAKERS = 3
 
+# Public address of the site, used in notification emails (no trailing slash).
+APP_URL = os.environ.get("APP_URL", "").rstrip("/")
+# Outgoing mail for "your transcript is ready". Leave SMTP_HOST empty to disable.
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER or "latranscriptora@localhost")
+# Time zone for dates shown to people.
+DISPLAY_TZ = os.environ.get("DISPLAY_TZ", "America/Puerto_Rico")
+
 
 def secret_key() -> str:
     """SECRET_KEY from the environment, else a persisted random one under DATA_DIR."""

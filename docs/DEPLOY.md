@@ -88,6 +88,27 @@ set `DEPLOY_BRANCH=<branch>` for that one run.
 Changes to `modal_app.py` or `transcribe/` also need `uv run modal deploy
 modal_app.py` from your laptop.
 
+## Email notifications (optional)
+
+The worker emails the uploader when a hearing finishes or fails, if `.env`
+has an SMTP server and the account has an address (set under Mi cuenta).
+With a Gmail account: create an app password (Google Account → Security →
+2-Step Verification → App passwords), then:
+
+```
+APP_URL=https://latranscriptora.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=<app password>
+SMTP_FROM=you@gmail.com
+```
+
+Restart the stack (`docker compose up -d`) after editing `.env`. Port 465
+uses implicit TLS; any other port uses STARTTLS. Leave `SMTP_HOST` empty
+to disable; the browser notification ("Avisarme al terminar" on the home
+page) works regardless.
+
 OS updates: `unattended-upgrades` was enabled in `SETUP.md` §4; reboot when
 `/var/run/reboot-required` appears. `restart: unless-stopped` brings the
 stack back after a reboot.

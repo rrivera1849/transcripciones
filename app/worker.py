@@ -22,7 +22,7 @@ from pathlib import Path
 from transcribe import Transcript
 from transcribe.audio import make_playback_copy, needs_playback_copy, normalize, probe
 
-from . import config, db
+from . import config, db, notify
 
 log = logging.getLogger("worker")
 
@@ -115,6 +115,7 @@ class Worker:
         except Exception as e:  # noqa: BLE001
             log.error("submit failed for %s: %s", job["id"], traceback.format_exc())
             db.update_job(conn, job["id"], status="error", stage=None, error=_friendly(e))
+            notify.job_finished(conn, job, error=_friendly(e))
             return 1
         db.update_job(conn, job["id"], modal_call_id=call_id, stage="Transcribiendo")
         return 1
@@ -134,6 +135,7 @@ class Worker:
         except Exception as e:  # noqa: BLE001
             log.error("job %s failed: %s", job["id"], traceback.format_exc())
             db.update_job(conn, job["id"], status="error", stage=None, error=_friendly(e))
+            notify.job_finished(conn, job, error=_friendly(e))
             return 1
         if result is None:
             return 0
@@ -146,6 +148,7 @@ class Worker:
             )
         log.info("job %s done: %s", job["id"], transcript.timing)
         self._compact_audio(conn, job)
+        notify.job_finished(conn, job)
         return 1
 
     def _compact_audio(self, conn, job: dict) -> None:

@@ -79,7 +79,8 @@ def clean_segments(segments: list[Segment]) -> list[Segment]:
             out[-1].end = max(out[-1].end, seg.end)
             continue
         out.append(
-            Segment(seg.start, seg.end, collapse_token_runs(text), seg.speaker, list(seg.words))
+            Segment(seg.start, seg.end, collapse_token_runs(text), seg.speaker, list(seg.words),
+                    seg.paragraph)
         )
     return out
 
@@ -102,6 +103,7 @@ def group_turns(segments: list[Segment]) -> list[Turn]:
             and turns[-1].speaker == seg.speaker
             and gap <= PARAGRAPH_GAP_S
             and not too_long
+            and not seg.paragraph
         ):
             last = turns[-1]
             last.text = f"{last.text} {text}"
@@ -159,7 +161,7 @@ def replace_turn_text(segments: list[Segment], turn: Turn, new_text: str) -> lis
     """Collapse the turn's segments into one carrying the edited text."""
     segs = clean_segments(segments)
     first, last = segs[turn.seg_from], segs[turn.seg_to]
-    merged = Segment(first.start, last.end, clean_text(new_text), first.speaker, [])
+    merged = Segment(first.start, last.end, clean_text(new_text), first.speaker, [], first.paragraph)
     return segs[: turn.seg_from] + [merged] + segs[turn.seg_to + 1 :]
 
 
@@ -170,8 +172,49 @@ def merge_turns(segments: list[Segment], first: Turn, second: Turn) -> list[Segm
     segs = clean_segments(segments)
     a, b = segs[first.seg_from], segs[second.seg_to]
     text = clean_text(" ".join(s.text for s in segs[first.seg_from : second.seg_to + 1]))
-    merged = Segment(a.start, b.end, text, a.speaker, [])
+    merged = Segment(a.start, b.end, text, a.speaker, [], a.paragraph)
     return segs[: first.seg_from] + [merged] + segs[second.seg_to + 1 :]
+
+
+def split_turn(segments: list[Segment], turn: Turn, before: str, after: str) -> list[Segment]:
+    """Cut a turn in two at a point the user chose (text before / after the cursor).
+
+    The cut time comes from word timestamps when the turn still has them,
+    otherwise it is estimated from the share of characters on each side.
+    """
+    before, after = clean_text(before), clean_text(after)
+    if not before or not after:
+        raise ValueError("both halves need text")
+    segs = clean_segments(segments)
+    first, last = segs[turn.seg_from], segs[turn.seg_to]
+    n_before = len(before.split())
+    if turn.words and 0 < n_before < len(turn.words) and turn.words[n_before - 1].end is not None:
+        mid = float(turn.words[n_before - 1].end)
+        nxt = turn.words[n_before].start
+        if nxt is not None:
+            mid = (mid + float(nxt)) / 2
+    else:
+        share = len(before) / max(1, len(before) + len(after))
+        mid = first.start + (last.end - first.start) * share
+    mid = min(max(mid, first.start), last.end)
+    a = Segment(first.start, mid, before, first.speaker, [], first.paragraph)
+    b = Segment(mid, last.end, after, first.speaker, [], paragraph=True)
+    return segs[: turn.seg_from] + [a, b] + segs[turn.seg_to + 1 :]
+
+
+def replace_text(segments: list[Segment], find: str, replacement: str) -> tuple[list[Segment], int]:
+    """Case-insensitive literal replace across every segment. Returns (segments, count)."""
+    find = find.strip()
+    if not find:
+        return segments, 0
+    pat = re.compile(re.escape(find), re.IGNORECASE)
+    total = 0
+    for seg in segments:
+        new, n = pat.subn(lambda _m: replacement, seg.text)
+        if n:
+            seg.text = clean_text(new)
+            total += n
+    return segments, total
 
 
 def set_turn_speaker(segments: list[Segment], turn: Turn, speaker: str) -> list[Segment]:

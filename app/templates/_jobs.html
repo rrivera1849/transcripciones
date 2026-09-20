@@ -6,7 +6,7 @@
     <thead><tr><th>Grabación</th><th>Fecha</th><th>Duración</th><th>Estado</th></tr></thead>
     <tbody>
     {% for j in jobs %}
-      <tr>
+      <tr data-id="{{ j.id }}" data-status="{{ j.status }}" data-title="{{ j.title }}">
         <td>
           {% if j.status == "done" %}<a class="job-title" href="/t/{{ j.id }}">{{ j.title }}</a>
           {% else %}<span class="job-title">{{ j.title }}</span>{% endif %}

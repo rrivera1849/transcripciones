@@ -1,0 +1,18 @@
+{% if not revisions %}
+<p class="muted small">Todavía no hay cambios guardados.</p>
+{% else %}
+<ul class="history">
+  {% for r in revisions %}
+  <li>
+    <span class="muted small">{{ r.when }} · {{ r.edited_by or "?" }}</span>
+    <span>{{ r.action }}</span>
+    <form method="post" action="/t/{{ job.id }}/restaurar" class="inline"
+          onsubmit="return confirm('¿Volver a como estaba antes de «{{ r.action|e }}»? El estado actual se guarda en el historial.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <input type="hidden" name="rev" value="{{ r.id }}">
+      <button class="link small" type="submit">Volver a antes de esto</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

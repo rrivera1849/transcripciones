@@ -388,6 +388,24 @@ compose up --build` on the VPS is the test. Server side: yours.
 
 See §11 for everything else that came out of the same brainstorm.
 
+### Phase 6 — Second batch (2026-09-20)
+
+- [x] Split a paragraph: "Dividir aquí" in the edit box cuts at the cursor;
+      the cut time comes from word timestamps. Halves carry a `paragraph`
+      flag on the segment so they never re-merge.
+- [x] Find and replace across the hearing ("Reemplazar…" next to the find
+      bar; case-insensitive, literal, confirmed, counted).
+- [x] Text size (normal / grande / muy grande) and high contrast from the
+      "Aa" menu in the header; remembered in the browser.
+- [x] Batch upload: several files queue and upload one after another; each
+      is titled after its file name.
+- [x] Notify when done: browser notification while the site is open in any
+      tab ("Avisarme al terminar"), and email via SMTP (`SMTP_*` in `.env`,
+      address set in Mi cuenta). Sent from the worker on done and on error.
+- [x] Revision history: every change snapshots the previous state (zlib,
+      last 30 per hearing). "Deshacer" and a "Historial" panel with
+      "Volver a antes de esto"; a restore is itself undoable.
+
 ---
 
 ## 7. Repository layout (target)
@@ -470,17 +488,13 @@ required; hosting is VPS + Modal.
 
 ## 11. Backlog (ideas, not committed)
 
-From the 2026-09-19 brainstorm. Nothing here is scheduled; pick by what Mom
+From the 2026-09-19 brainstorm; items built since are in phases 5–6. Nothing here is scheduled; pick by what Mom
 actually stumbles on. Effort: S = hours, M = a day or two, L = more.
 
 ### Editing
 
 | Idea | Effort | Notes |
 |---|---|---|
-| Split a paragraph at the cursor | S | Mirror of "Unir con el anterior"; fixes a missed speaker change. |
-| Find and replace across the hearing | S | A surname heard wrong forty times, fixed once. |
-| Undo / revision history | M | Keep every saved version of a transcript; "Restaurar". |
-| Font-size and high-contrast toggle | S | Per-account setting; accessibility. |
 | Redaction | M | Mark names / minors; exports print `[REDACTADO]`, editor keeps the text. |
 | Speaker suggestions from the *previous* hearing of the same case | S | Needs case files (below). |
 
@@ -511,8 +525,6 @@ an open-weights model on Modal, at some quality cost.
 
 | Idea | Effort | Notes |
 |---|---|---|
-| Notify when done (email / browser push) | S | Upload and walk away. |
-| Batch upload | S | Drop several files; they queue. |
 | Trash with 7-day restore | S | Instead of immediate delete. |
 | Formatted court transcript export | M | Word template: case caption, numbered lines, page numbers, certification page ("transcripción de la prueba oral"). Turns a draft into a deliverable. |
 | Speaking-time per participant; waveform under the player | S | Nice-to-have. |

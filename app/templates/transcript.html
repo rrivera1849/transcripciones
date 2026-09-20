@@ -14,6 +14,16 @@
     <a class="secondary" href="/t/{{ job.id }}/download/docx">Descargar Word</a>
     <a class="secondary" href="/t/{{ job.id }}/download/txt">.txt</a>
     <a class="secondary" href="/t/{{ job.id }}/download/srt">.srt</a>
+    <form method="post" action="/t/{{ job.id }}/deshacer" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <button class="secondary" type="submit" id="undo" title="Deshacer el último cambio" {% if not revisions %}disabled{% endif %}>Deshacer</button>
+    </form>
+    <details class="history-box">
+      <summary class="secondary-like">Historial{% if revisions %} ({{ revisions }}){% endif %}</summary>
+      <div class="card history-panel" hx-get="/t/{{ job.id }}/historial" hx-trigger="toggle from:closest details" hx-swap="innerHTML">
+        <p class="muted small">Cargando…</p>
+      </div>
+    </details>
     <form method="post" action="/t/{{ job.id }}/delete" class="inline"
           onsubmit="return confirm('¿Eliminar esta transcripción y su audio? No se puede deshacer.')">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
@@ -74,7 +84,16 @@
       <label class="lowc-toggle small" title="Palabras que el modelo no oyó con claridad; haz clic en una para escucharla">
         <input type="checkbox" id="lowc-toggle" checked> Marcar dudosas <span id="lowc-count">({{ doubtful }})</span>
       </label>
+      <button type="button" class="secondary" id="replace-toggle" title="Cambiar una palabra en toda la transcripción">Reemplazar…</button>
     </div>
+    <form class="replace" id="replace-form" hidden hx-post="/t/{{ job.id }}/replace" hx-target="#turns" hx-swap="outerHTML"
+          hx-confirm="confirmar">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <input type="hidden" name="find" id="replace-find">
+      <input name="replace" id="replace-with" placeholder="Reemplazar por…" aria-label="Reemplazar por">
+      <button class="primary" type="submit">Reemplazar todo</button>
+      <span id="replace-result" class="muted small"></span>
+    </form>
     {% include "_turns.html" %}
   </section>
 </div>

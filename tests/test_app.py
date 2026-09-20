@@ -409,3 +409,113 @@ def test_doubtful_words_role_picker_and_suggestions_render(client, tmp_path):
     # editing a paragraph drops its word alignment, so nothing is flagged there any more
     r = client.post(f"/t/{job_id}/turn/1/text", data={"text": "Yo estaba en Morovis. No recuerdo.", **tok})
     assert r.status_code == 200 and 'class="lowc"' not in r.text
+
+
+def _done_job(client, tmp_path, name="v.wav", **fields):
+    """Upload a file and run the fake worker so the transcript exists."""
+    from app.worker import FakeBackend, Worker
+
+    job_id = upload(client, _make_wav(tmp_path / name, seconds=1.0), title=fields.pop("title", "Vista"), **fields)
+    Worker(FakeBackend(json.loads(FIX.read_text(encoding="utf-8")))).tick()
+    return job_id
+
+
+def test_history_undo_and_restore(client, tmp_path):
+    login(client)
+    job_id = _done_job(client, tmp_path)
+    tok = {"csrf_token": csrf_of(client)}
+    page = client.get(f"/t/{job_id}").text
+    assert 'id="undo" title="Deshacer el último cambio" disabled' in page
+
+    r = client.post(f"/t/{job_id}/turn/0/text", data={"text": "Primera edición.", **tok})
+    assert r.status_code == 200 and "Primera edición." in r.text
+    r = client.post(f"/t/{job_id}/speaker/rename", data={"speaker": "SPEAKER_00", "name": "Doña Carmen", **tok})
+    assert r.status_code == 200
+
+    hist = client.get(f"/t/{job_id}/historial").text
+    assert "nombrar hablante «Doña Carmen»" in hist and "editar el párrafo de 00:00:00" in hist
+    assert hist.index("nombrar hablante") < hist.index("editar el párrafo")  # newest first
+    assert "Historial (2)" in client.get(f"/t/{job_id}").text
+
+    # undo the rename only
+    r = client.post(f"/t/{job_id}/deshacer", data=tok, follow_redirects=False)
+    assert r.status_code == 303
+    page = client.get(f"/t/{job_id}").text
+    assert "Doña Carmen" not in page and "Primera edición." in page
+    # the undo itself is recorded, so it can be undone
+    hist = client.get(f"/t/{job_id}/historial").text
+    assert "restaurar una versión anterior" in hist
+
+    # restore to before the first edit
+    revs = hist.split('name="rev" value="')
+    first_rev = revs[-1].split('"')[0]
+    r = client.post(f"/t/{job_id}/restaurar", data={"rev": first_rev, **tok}, follow_redirects=False)
+    assert r.status_code == 303
+    page = client.get(f"/t/{job_id}").text
+    assert "Primera edición." not in page and "Se abre la sesión" in page
+
+
+def test_split_paragraph(client, tmp_path):
+    login(client)
+    job_id = _done_job(client, tmp_path)
+    tok = {"csrf_token": csrf_of(client)}
+    before = client.get(f"/t/{job_id}").text.count('class="turn"')
+    r = client.post(f"/t/{job_id}/turn/0/split",
+                    data={"before": "Se abre la sesión.", "after": "Licenciado, tiene la palabra.", **tok})
+    assert r.status_code == 200
+    assert r.text.count('class="turn"') == before + 1
+    assert ">Se abre la sesión.</p>" in r.text and ">Licenciado, tiene la palabra.</p>" in r.text
+    assert "dividir el párrafo" in client.get(f"/t/{job_id}/historial").text
+    # empty half: nothing changes
+    r = client.post(f"/t/{job_id}/turn/0/split", data={"before": "Se abre la sesión.", "after": "  ", **tok})
+    assert r.text.count('class="turn"') == before + 1
+
+
+def test_replace_all(client, tmp_path):
+    login(client)
+    job_id = _done_job(client, tmp_path)
+    tok = {"csrf_token": csrf_of(client)}
+    r = client.post(f"/t/{job_id}/replace", data={"find": "licenciado", "replace": "Lcdo. Torres", **tok})
+    assert r.status_code == 200
+    n = json.loads(r.headers["HX-Trigger"])["replaced"]
+    assert n >= 1 and "Lcdo. Torres, tiene la palabra." in r.text and "Licenciado" not in r.text
+    assert "reemplazar «licenciado» por «Lcdo. Torres»" in client.get(f"/t/{job_id}/historial").text
+    r = client.post(f"/t/{job_id}/replace", data={"find": "zzz", "replace": "y", **tok})
+    assert json.loads(r.headers["HX-Trigger"])["replaced"] == 0
+
+
+def test_email_setting_and_notification_on_done(client, tmp_path, monkeypatch):
+    from app import config, db, notify
+    from app.worker import FakeBackend, Worker
+
+    login(client)
+    tok = {"csrf_token": csrf_of(client)}
+    r = client.post("/cuenta/correo", data={"email": "no-es-correo", **tok})
+    assert "no parece válido" in r.text
+    r = client.post("/cuenta/correo", data={"email": "mama@example.com", **tok})
+    assert "Correo guardado" in r.text and 'value="mama@example.com"' in r.text
+    with db.connect() as conn:
+        assert db.get_user(conn, "mama")["email"] == "mama@example.com"
+
+    sent = []
+    monkeypatch.setattr(notify, "send_email", lambda to, subject, body: sent.append((to, subject, body)) or True)
+    monkeypatch.setattr(config, "APP_URL", "https://latranscriptora.com")
+    job_id = upload(client, _make_wav(tmp_path / "v.wav", seconds=1.0), title="Vista larga")
+    Worker(FakeBackend(json.loads(FIX.read_text(encoding="utf-8")))).tick()
+    assert len(sent) == 1
+    to, subject, body = sent[0]
+    assert to == "mama@example.com" and subject == "«Vista larga» está lista"
+    assert f"https://latranscriptora.com/t/{job_id}" in body
+
+    # no email on the account -> nothing sent
+    client.post("/cuenta/correo", data={"email": "", **tok})
+    upload(client, _make_wav(tmp_path / "w.wav", seconds=1.0), title="Otra")
+    Worker(FakeBackend(json.loads(FIX.read_text(encoding="utf-8")))).tick()
+    assert len(sent) == 1
+
+
+def test_text_size_menu_and_multi_upload_markup(client):
+    login(client)
+    page = client.get("/").text
+    assert 'multiple hidden' in page and 'id="notify-btn"' in page
+    assert 'class="ui-menu"' in page and 'name="contrast"' in page

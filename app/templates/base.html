@@ -10,20 +10,37 @@
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#2563eb">
   <script src="/static/htmx.min.js" defer></script>
+  <script>/* apply saved text size / contrast before first paint */
+    try { var u = JSON.parse(localStorage.getItem("ui") || "{}"); var h = document.documentElement;
+      if (u.size) h.dataset.size = u.size; if (u.contrast) h.dataset.contrast = "1"; } catch (e) {}
+  </script>
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{ csrf }}"}'>
   <header class="top">
     <a class="brand" href="/"><img class="logo" src="/static/logo.svg" alt="" width="30" height="30">La Transcriptora</a>
-    {% if session %}
-    <form method="post" action="/logout" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf }}">
-      <a class="muted" href="/cuenta" title="Cambiar contraseña">{{ session.u }}</a>
-      <button class="link" type="submit">Salir</button>
-    </form>
-    {% endif %}
+    <div class="top-right">
+      <details class="ui-menu">
+        <summary title="Tamaño de letra y contraste" aria-label="Tamaño de letra y contraste">Aa</summary>
+        <div class="card ui-panel">
+          <strong>Tamaño de letra</strong>
+          <label><input type="radio" name="size" value=""> Normal</label>
+          <label><input type="radio" name="size" value="grande"> Grande</label>
+          <label><input type="radio" name="size" value="muy-grande"> Muy grande</label>
+          <label class="ui-contrast"><input type="checkbox" name="contrast"> Alto contraste</label>
+        </div>
+      </details>
+      {% if session %}
+      <form method="post" action="/logout" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <a class="muted" href="/cuenta" title="Cambiar contraseña y avisos">{{ session.u }}</a>
+        <button class="link" type="submit">Salir</button>
+      </form>
+      {% endif %}
+    </div>
   </header>
   <main class="wrap">
     {% block content %}{% endblock %}
   </main>
+  <script src="/static/ui.js" defer></script>
 </body>
 </html>

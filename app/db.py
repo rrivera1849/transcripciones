@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+import zlib
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,7 +51,22 @@ CREATE TABLE IF NOT EXISTS transcripts (
 CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
     job_id UNINDEXED, title, body, tokenize='unicode61 remove_diacritics 2'
 );
+CREATE TABLE IF NOT EXISTS transcript_revisions (
+    id INTEGER PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    edited_by TEXT,
+    action TEXT NOT NULL,            -- what the change *after* this snapshot did
+    data BLOB NOT NULL,              -- zlib(JSON) of the transcript before the change
+    speaker_names TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS revisions_job ON transcript_revisions(job_id, id);
 """
+
+# Columns added after the first release; applied by init_db when missing.
+MIGRATIONS = [("users", "email", "ALTER TABLE users ADD COLUMN email TEXT")]
+
+MAX_REVISIONS = 30
 
 ACTIVE_STATUSES = ("uploading", "queued", "running")
 
@@ -77,6 +93,10 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 def init_db(path: Path | None = None) -> None:
     with connect(path) as conn:
         conn.executescript(SCHEMA)
+        for table, column, ddl in MIGRATIONS:
+            cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in cols:
+                conn.execute(ddl)
         # backfill the search index for transcripts saved before it existed
         missing = conn.execute(
             """SELECT t.job_id FROM transcripts t
@@ -115,6 +135,10 @@ def set_password(conn: sqlite3.Connection, username: str, password_hash: str) ->
         "UPDATE users SET password_hash = ? WHERE username = ?", (password_hash, username)
     )
     return cur.rowcount == 1
+
+
+def set_email(conn: sqlite3.Connection, username: str, email: str | None) -> None:
+    conn.execute("UPDATE users SET email = ? WHERE username = ?", (email or None, username))
 
 
 def count_users(conn: sqlite3.Connection) -> int:
@@ -204,7 +228,11 @@ def update_transcript(
     data: dict | None = None,
     speaker_names: dict | None = None,
     edited_by: str | None = None,
+    action: str | None = None,
 ) -> None:
+    """Write a change. With `action`, the previous state is kept as a revision first."""
+    if action:
+        _snapshot(conn, job_id, action, edited_by)
     sets, vals = ["edited_at = ?", "edited_by = ?"], [now(), edited_by]
     if data is not None:
         sets.append("data = ?")
@@ -215,6 +243,54 @@ def update_transcript(
     conn.execute(f"UPDATE transcripts SET {', '.join(sets)} WHERE job_id = ?", (*vals, job_id))
     if data is not None:
         reindex(conn, job_id)
+
+
+# --- revisions -----------------------------------------------------------
+
+def _snapshot(conn: sqlite3.Connection, job_id: str, action: str, edited_by: str | None) -> None:
+    row = conn.execute(
+        "SELECT data, speaker_names FROM transcripts WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    if row is None:
+        return
+    conn.execute(
+        """INSERT INTO transcript_revisions (job_id, created_at, edited_by, action, data, speaker_names)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (job_id, now(), edited_by, action[:120], zlib.compress(row["data"].encode("utf-8")),
+         row["speaker_names"]),
+    )
+    conn.execute(
+        """DELETE FROM transcript_revisions WHERE job_id = ? AND id NOT IN (
+               SELECT id FROM transcript_revisions WHERE job_id = ? ORDER BY id DESC LIMIT ?)""",
+        (job_id, job_id, MAX_REVISIONS),
+    )
+
+
+def list_revisions(conn: sqlite3.Connection, job_id: str) -> list[dict]:
+    """Newest first; no data payload."""
+    rows = conn.execute(
+        """SELECT id, created_at, edited_by, action FROM transcript_revisions
+           WHERE job_id = ? ORDER BY id DESC""",
+        (job_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def restore_revision(conn: sqlite3.Connection, job_id: str, rev_id: int, edited_by: str) -> bool:
+    """Put a snapshot back as the current transcript. The current state is kept, so this is undoable."""
+    row = conn.execute(
+        "SELECT data, speaker_names FROM transcript_revisions WHERE id = ? AND job_id = ?",
+        (rev_id, job_id),
+    ).fetchone()
+    if row is None:
+        return False
+    update_transcript(
+        conn, job_id,
+        data=json.loads(zlib.decompress(row["data"]).decode("utf-8")),
+        speaker_names=json.loads(row["speaker_names"]),
+        edited_by=edited_by, action="restaurar una versión anterior",
+    )
+    return True
 
 
 # --- search --------------------------------------------------------------
