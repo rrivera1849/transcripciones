@@ -118,8 +118,10 @@ html[data-contrast="1"] a, html[data-contrast="1"] .link { text-decoration: unde
 .ui-panel .ui-contrast { margin-top:6px; border-top:1px solid var(--line); padding-top:8px; }
 
 /* find & replace */
-.replace { display:flex; gap:8px; align-items:center; margin:-2px 0 10px; flex-wrap:wrap; }
-.replace input[name=replace] { flex:1; min-width:160px; }
+.replace { display:flex; gap:10px; align-items:center; margin:-2px 0 10px; flex-wrap:wrap; padding:12px 14px; }
+.replace label { flex-direction:row; align-items:center; gap:8px; font-weight:400; flex:1; min-width:220px; }
+.replace label input { flex:1; min-width:0; }
+.split-hint { flex-basis:100%; }
 
 /* revision history */
 .history-box { position: relative; }

@@ -16,7 +16,7 @@
     <a class="secondary" href="/t/{{ job.id }}/download/srt">.srt</a>
     <form method="post" action="/t/{{ job.id }}/deshacer" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
-      <button class="secondary" type="submit" id="undo" title="Deshacer el último cambio" {% if not revisions %}disabled{% endif %}>Deshacer</button>
+      <button class="secondary" type="submit" id="undo" title="Deshacer el último cambio" {% if not can_undo %}disabled{% endif %}>Deshacer</button>
     </form>
     <details class="history-box">
       <summary class="secondary-like">Historial{% if revisions %} ({{ revisions }}){% endif %}</summary>
@@ -86,12 +86,11 @@
       </label>
       <button type="button" class="secondary" id="replace-toggle" title="Cambiar una palabra en toda la transcripción">Reemplazar…</button>
     </div>
-    <form class="replace" id="replace-form" hidden hx-post="/t/{{ job.id }}/replace" hx-target="#turns" hx-swap="outerHTML"
-          hx-confirm="confirmar">
+    <form class="replace card" id="replace-form" hidden hx-post="/t/{{ job.id }}/replace" hx-target="#turns" hx-swap="outerHTML">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
-      <input type="hidden" name="find" id="replace-find">
-      <input name="replace" id="replace-with" placeholder="Reemplazar por…" aria-label="Reemplazar por">
-      <button class="primary" type="submit">Reemplazar todo</button>
+      <label>Cambiar <input name="find" id="replace-find" placeholder="palabra o frase" aria-label="Qué cambiar" required></label>
+      <label>por <input name="replace" id="replace-with" placeholder="texto nuevo" aria-label="Texto nuevo"></label>
+      <button class="primary" type="submit">Cambiar en toda la transcripción</button>
       <span id="replace-result" class="muted small"></span>
     </form>
     {% include "_turns.html" %}
@@ -122,5 +121,5 @@
 {% else %}
 <div class="player muted small">El audio ya no está disponible (se borra a los {{ retention_days }} días); la transcripción se conserva.</div>
 {% endif %}
-<script src="/static/transcript.js" defer></script>
+<script src="{{ asset('transcript.js') }}" defer></script>
 {% endblock %}

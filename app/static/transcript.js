@@ -97,8 +97,15 @@
     const split = e.target.closest(".split-btn");
     if (split) {
       const form = split.closest(".turn-edit"), ta = form.querySelector("textarea");
-      const pos = ta.selectionStart, before = ta.value.slice(0, pos), after = ta.value.slice(pos);
-      if (!before.trim() || !after.trim()) { alert("Haz clic dentro del texto, en el punto donde quieres cortar, y vuelve a pulsar «Dividir aquí»."); ta.focus(); return; }
+      // Use the last cursor position seen in the textarea: some browsers drop the
+      // selection when the button takes focus.
+      const pos = ta.dataset.cursor !== undefined ? parseInt(ta.dataset.cursor, 10) : ta.selectionStart;
+      const before = ta.value.slice(0, pos), after = ta.value.slice(pos);
+      if (!before.trim() || !after.trim()) {
+        alert("Primero haz clic dentro del texto, en el punto exacto donde quieres cortar, y luego pulsa «Dividir aquí».");
+        ta.focus(); return;
+      }
+      split.disabled = true;
       htmx.ajax("POST", split.dataset.url, {
         source: form, target: "#turns", swap: "outerHTML",
         values: { before, after, csrf_token: form.querySelector("input[name=csrf_token]").value },
@@ -114,6 +121,14 @@
       p.remove();
     }
   });
+
+  // Remember where the cursor is inside an edit box (for "Dividir aquí").
+  function trackCursor(e) {
+    const ta = e.target;
+    if (ta.tagName === "TEXTAREA" && ta.closest(".turn-edit")) ta.dataset.cursor = ta.selectionStart;
+  }
+  ["keyup", "mouseup", "select", "input", "touchend"].forEach((ev) => document.addEventListener(ev, trackCursor));
+  document.addEventListener("selectionchange", () => { const a = document.activeElement; if (a && a.tagName === "TEXTAREA") trackCursor({ target: a }); });
 
   // Role picker: copy the chosen role into the name box before htmx reads the form.
   document.addEventListener("change", (e) => {
@@ -220,25 +235,27 @@
     const result = document.getElementById("replace-result");
     replaceToggle.addEventListener("click", () => {
       replaceForm.hidden = !replaceForm.hidden;
-      if (!replaceForm.hidden) { if (!find.value.trim()) { find.focus(); result.textContent = "Escribe primero qué buscar."; } else withField.focus(); }
+      if (replaceForm.hidden) return;
+      if (find.value.trim() && !findField.value) findField.value = find.value.trim();
+      (findField.value ? withField : findField).focus();
     });
+    // htmx fires htmx:confirm before every request; we ask with the exact terms.
     replaceForm.addEventListener("htmx:confirm", (e) => {
       e.preventDefault();
-      const q = find.value.trim();
-      if (!q) { find.focus(); result.textContent = "Escribe primero qué buscar."; return; }
-      findField.value = q;
-      if (confirm(`¿Reemplazar «${q}» por «${withField.value}» en toda la transcripción?`)) e.detail.issueRequest(true);
+      const q = findField.value.trim();
+      if (!q) { findField.focus(); result.textContent = "Escribe qué palabra cambiar."; return; }
+      if (confirm(`¿Cambiar «${q}» por «${withField.value}» en toda la transcripción?`)) e.detail.issueRequest(true);
     });
     document.body.addEventListener("replaced", (e) => {
       const n = e.detail.value;
-      result.textContent = n ? `${n} reemplazo${n === 1 ? "" : "s"} hecho${n === 1 ? "" : "s"}.` : "No se encontró nada que reemplazar.";
-      const undo = document.getElementById("undo"); if (n && undo) undo.disabled = false;
+      result.textContent = n ? `${n} cambio${n === 1 ? "" : "s"} hecho${n === 1 ? "" : "s"}.` : "No se encontró esa palabra.";
+      if (n) { const undo = document.getElementById("undo"); if (undo) undo.disabled = false; if (find.value) highlight(find.value); }
     });
   }
-  // Any saved edit makes "Deshacer" available.
+  // Any other saved edit makes "Deshacer" available.
   document.body.addEventListener("htmx:afterRequest", (e) => {
-    const undo = document.getElementById("undo");
-    if (undo && e.detail.successful && e.detail.requestConfig.verb === "post") undo.disabled = false;
+    const undo = document.getElementById("undo"), path = e.detail.requestConfig && e.detail.requestConfig.path || "";
+    if (undo && e.detail.successful && e.detail.requestConfig.verb === "post" && !path.endsWith("/replace")) undo.disabled = false;
   });
 
   const copy = document.getElementById("copy-all");

@@ -192,3 +192,20 @@ def test_replace_text_is_case_insensitive_and_counts():
     out, n = replace_text(segs, "ribera", "Rivera")
     assert n == 2 and out[0].text == "La Rivera del río. Rivera." and out[1].text == "Nada aquí."
     assert replace_text(segs, "   ", "x")[1] == 0
+
+
+def test_undo_target_walks_back_through_undos():
+    from app.db import undo_target
+
+    R = lambda i, rf=None: {"id": i, "restored_from": rf}
+    assert undo_target([]) is None
+    assert undo_target([R(2), R(1)]) == 2
+    # after undoing 2 (record 3 restored_from=2), the next undo goes to 1
+    assert undo_target([R(3, 2), R(2), R(1)]) == 1
+    # after undoing both, nothing is left
+    assert undo_target([R(4, 1), R(3, 2), R(2), R(1)]) is None
+    # a new edit (5) after undos is undone first, then history is exhausted
+    assert undo_target([R(5), R(4, 1), R(3, 2), R(2), R(1)]) == 5
+    assert undo_target([R(6, 5), R(5), R(4, 1), R(3, 2), R(2), R(1)]) is None
+    # undo B, edit C, undo C, undo again -> before A
+    assert undo_target([R(5, 4), R(4), R(3, 2), R(2), R(1)]) == 1

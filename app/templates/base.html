@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}La Transcriptora{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/static/icon-180.png">
-  <link rel="manifest" href="/static/manifest.json">
+  <link rel="stylesheet" href="{{ asset('style.css') }}">
+  <link rel="icon" href="{{ asset('logo.svg') }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ asset('icon-180.png') }}">
+  <link rel="manifest" href="{{ asset('manifest.json') }}">
   <meta name="theme-color" content="#2563eb">
-  <script src="/static/htmx.min.js" defer></script>
+  <script src="{{ asset('htmx.min.js') }}" defer></script>
   <script>/* apply saved text size / contrast before first paint */
     try { var u = JSON.parse(localStorage.getItem("ui") || "{}"); var h = document.documentElement;
       if (u.size) h.dataset.size = u.size; if (u.contrast) h.dataset.contrast = "1"; } catch (e) {}
@@ -17,7 +17,7 @@
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{ csrf }}"}'>
   <header class="top">
-    <a class="brand" href="/"><img class="logo" src="/static/logo.svg" alt="" width="30" height="30">La Transcriptora</a>
+    <a class="brand" href="/"><img class="logo" src="{{ asset('logo.svg') }}" alt="" width="30" height="30">La Transcriptora</a>
     <div class="top-right">
       <details class="ui-menu">
         <summary title="Tamaño de letra y contraste" aria-label="Tamaño de letra y contraste">Aa</summary>
@@ -41,6 +41,6 @@
   <main class="wrap">
     {% block content %}{% endblock %}
   </main>
-  <script src="/static/ui.js" defer></script>
+  <script src="{{ asset('ui.js') }}" defer></script>
 </body>
 </html>

@@ -46,6 +46,6 @@
 <script>
   window.UPLOAD = { chunk: {{ chunk }}, maxBytes: {{ max_bytes }}, csrf: "{{ csrf }}" };
 </script>
-<script src="/static/upload.js" defer></script>
-<script src="/static/notify.js" defer></script>
+<script src="{{ asset('upload.js') }}" defer></script>
+<script src="{{ asset('notify.js') }}" defer></script>
 {% endblock %}

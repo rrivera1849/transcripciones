@@ -442,9 +442,21 @@ def test_history_undo_and_restore(client, tmp_path):
     assert r.status_code == 303
     page = client.get(f"/t/{job_id}").text
     assert "Doña Carmen" not in page and "Primera edición." in page
-    # the undo itself is recorded, so it can be undone
+    # the undo itself is recorded; pressing Deshacer again keeps walking back
     hist = client.get(f"/t/{job_id}/historial").text
-    assert "restaurar una versión anterior" in hist
+    assert "deshacer" in hist
+    client.post(f"/t/{job_id}/deshacer", data=tok, follow_redirects=False)
+    page = client.get(f"/t/{job_id}").text
+    assert "Primera edición." not in page and "Se abre la sesión" in page
+    assert 'title="Deshacer el último cambio" disabled' in page  # nothing left to undo
+    # an edit after undos starts a fresh line of history
+    client.post(f"/t/{job_id}/turn/0/text", data={"text": "Segunda edición.", **tok})
+    client.post(f"/t/{job_id}/deshacer", data=tok, follow_redirects=False)
+    page = client.get(f"/t/{job_id}").text
+    assert "Segunda edición." not in page and "Se abre la sesión" in page
+    client.post(f"/t/{job_id}/turn/0/text", data={"text": "Primera edición.", **tok})
+    client.post(f"/t/{job_id}/speaker/rename", data={"speaker": "SPEAKER_00", "name": "Doña Carmen", **tok})
+    hist = client.get(f"/t/{job_id}/historial").text
 
     # restore to before the first edit
     revs = hist.split('name="rev" value="')
@@ -519,3 +531,14 @@ def test_text_size_menu_and_multi_upload_markup(client):
     page = client.get("/").text
     assert 'multiple hidden' in page and 'id="notify-btn"' in page
     assert 'class="ui-menu"' in page and 'name="contrast"' in page
+
+
+def test_static_assets_are_versioned_and_cacheable(client):
+    login(client)
+    page = client.get("/")
+    assert "/static/style.css?v=" in page.text and "/static/upload.js?v=" in page.text
+    assert page.headers["cache-control"] == "no-store"
+    url = page.text.split('href="')[1].split('"')[0] if "/static/style.css?v=" in page.text.split('href="')[1] else "/static/style.css?v=x"
+    r = client.get(url)
+    assert r.status_code == 200 and "immutable" in r.headers["cache-control"]
+    assert client.get("/static/style.css").headers["cache-control"] == "no-cache"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import re
@@ -38,8 +39,40 @@ from . import auth, config, db
 
 BASE = Path(__file__).parent
 app = FastAPI(title="Transcripciones", docs_url=None, redoc_url=None)
-app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+STATIC_DIR = BASE / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(BASE / "templates"))
+
+_asset_versions: dict[str, str] = {}
+
+
+def asset(path: str) -> str:
+    """/static/<path>?v=<content hash>: a new deploy gets a new URL, so no browser
+    or Cloudflare cache can keep serving the previous CSS/JS."""
+    v = _asset_versions.get(path)
+    if v is None:
+        try:
+            v = hashlib.sha256((STATIC_DIR / path).read_bytes()).hexdigest()[:10]
+        except OSError:
+            v = "0"
+        _asset_versions[path] = v
+    return f"/static/{path}?v={v}"
+
+
+templates.env.globals["asset"] = asset
+
+
+@app.middleware("http")
+async def static_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        if "v" in request.query_params:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+    elif "Cache-Control" not in response.headers:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 templates.env.filters["ts"] = fmt_ts
 templates.env.globals["ROLE_SUGGESTIONS"] = ROLE_SUGGESTIONS
 
@@ -362,12 +395,13 @@ def transcript_page(request: Request, job_id: str, q: str = "",
                     session: dict = Depends(current_session)):
     with db.connect() as conn:
         job, transcript, overrides = _load(conn, job_id, session)
-        revisions = len(db.list_revisions(conn, job_id))
+        revs = db.list_revisions(conn, job_id)
+        revisions, can_undo = len(revs), db.undo_target(revs) is not None
     ctx = _turns_ctx(transcript, overrides)
     audio_ok = job["audio_path"] and Path(job["audio_path"]).exists() and not job["audio_deleted_at"]
     return render(request, "transcript.html", session, job=_job_view(job), audio_ok=audio_ok,
                   duration=fmt_ts(transcript.duration or 0), q=q.strip()[:200],
-                  retention_days=config.RETENTION_DAYS, revisions=revisions, **ctx)
+                  retention_days=config.RETENTION_DAYS, revisions=revisions, can_undo=can_undo, **ctx)
 
 
 def _turns_response(request: Request, session: dict, job_id: str) -> HTMLResponse:
@@ -520,10 +554,10 @@ def undo(request: Request, job_id: str, session: dict = Depends(current_session)
     csrf_ok(request, session, csrf_token)
     with db.connect() as conn:
         _job_or_404(conn, job_id)
-        revs = db.list_revisions(conn, job_id)
-        if revs:
+        target = db.undo_target(db.list_revisions(conn, job_id))
+        if target is not None:
             with db.tx(conn):
-                db.restore_revision(conn, job_id, revs[0]["id"], session["u"])
+                db.restore_revision(conn, job_id, target, session["u"], action="deshacer")
     return RedirectResponse(f"/t/{job_id}", status_code=303)
 
 

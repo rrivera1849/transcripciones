@@ -64,7 +64,12 @@ CREATE INDEX IF NOT EXISTS revisions_job ON transcript_revisions(job_id, id);
 """
 
 # Columns added after the first release; applied by init_db when missing.
-MIGRATIONS = [("users", "email", "ALTER TABLE users ADD COLUMN email TEXT")]
+MIGRATIONS = [
+    ("users", "email", "ALTER TABLE users ADD COLUMN email TEXT"),
+    # which revision an undo/restore put back (NULL for ordinary edits)
+    ("transcript_revisions", "restored_from",
+     "ALTER TABLE transcript_revisions ADD COLUMN restored_from INTEGER"),
+]
 
 MAX_REVISIONS = 30
 
@@ -247,17 +252,19 @@ def update_transcript(
 
 # --- revisions -----------------------------------------------------------
 
-def _snapshot(conn: sqlite3.Connection, job_id: str, action: str, edited_by: str | None) -> None:
+def _snapshot(conn: sqlite3.Connection, job_id: str, action: str, edited_by: str | None,
+              restored_from: int | None = None) -> None:
     row = conn.execute(
         "SELECT data, speaker_names FROM transcripts WHERE job_id = ?", (job_id,)
     ).fetchone()
     if row is None:
         return
     conn.execute(
-        """INSERT INTO transcript_revisions (job_id, created_at, edited_by, action, data, speaker_names)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO transcript_revisions
+               (job_id, created_at, edited_by, action, data, speaker_names, restored_from)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (job_id, now(), edited_by, action[:120], zlib.compress(row["data"].encode("utf-8")),
-         row["speaker_names"]),
+         row["speaker_names"], restored_from),
     )
     conn.execute(
         """DELETE FROM transcript_revisions WHERE job_id = ? AND id NOT IN (
@@ -269,14 +276,30 @@ def _snapshot(conn: sqlite3.Connection, job_id: str, action: str, edited_by: str
 def list_revisions(conn: sqlite3.Connection, job_id: str) -> list[dict]:
     """Newest first; no data payload."""
     rows = conn.execute(
-        """SELECT id, created_at, edited_by, action FROM transcript_revisions
+        """SELECT id, created_at, edited_by, action, restored_from FROM transcript_revisions
            WHERE job_id = ? ORDER BY id DESC""",
         (job_id,),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-def restore_revision(conn: sqlite3.Connection, job_id: str, rev_id: int, edited_by: str) -> bool:
+def undo_target(revisions: list[dict]) -> int | None:
+    """Which revision "Deshacer" should put back, given list_revisions() output (newest first).
+
+    Undo records are skipped, and so is everything they already undid, so
+    pressing Deshacer repeatedly walks further back instead of flip-flopping.
+    """
+    cursor: int | None = None
+    for r in revisions:
+        if r.get("restored_from"):
+            cursor = r["restored_from"] if cursor is None else min(cursor, r["restored_from"])
+        elif cursor is None or r["id"] < cursor:
+            return r["id"]
+    return None
+
+
+def restore_revision(conn: sqlite3.Connection, job_id: str, rev_id: int, edited_by: str,
+                     action: str = "volver a una versión anterior") -> bool:
     """Put a snapshot back as the current transcript. The current state is kept, so this is undoable."""
     row = conn.execute(
         "SELECT data, speaker_names FROM transcript_revisions WHERE id = ? AND job_id = ?",
@@ -284,11 +307,12 @@ def restore_revision(conn: sqlite3.Connection, job_id: str, rev_id: int, edited_
     ).fetchone()
     if row is None:
         return False
+    _snapshot(conn, job_id, action, edited_by, restored_from=rev_id)
     update_transcript(
         conn, job_id,
         data=json.loads(zlib.decompress(row["data"]).decode("utf-8")),
         speaker_names=json.loads(row["speaker_names"]),
-        edited_by=edited_by, action="restaurar una versión anterior",
+        edited_by=edited_by,
     )
     return True
 
