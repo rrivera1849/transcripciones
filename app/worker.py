@@ -16,15 +16,20 @@ import shutil
 import tempfile
 import time
 import traceback
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from transcribe import Transcript
 from transcribe.audio import make_playback_copy, needs_playback_copy, normalize, probe
+from transcribe.corrections import apply_corrections, describe
 
 from . import config, db, notify
 
 log = logging.getLogger("worker")
+
+# Shown as the author of the automatic-corrections entry in Historial.
+CORRECTIONS_AUTHOR = "La Transcriptora"
 
 
 class ModalBackend:
@@ -35,8 +40,6 @@ class ModalBackend:
         opts = {}
         if job.get("min_speakers"):
             opts["min_speakers"] = int(job["min_speakers"])
-        if job.get("vocabulary"):
-            opts["vocabulary"] = job["vocabulary"]
         call = spawn(job["id"], remote, **opts)
         return call.object_id
 
@@ -140,13 +143,23 @@ class Worker:
         if result is None:
             return 0
         transcript = Transcript.from_dict(result)
+        try:
+            corrected, counts = apply_corrections(transcript)
+        except Exception:  # noqa: BLE001 - a bad rule must never lose a finished transcript
+            log.error("corrections failed for %s: %s", job["id"], traceback.format_exc())
+            corrected, counts = transcript, Counter()
         with db.tx(conn):
+            # Raw output first, then the automatic corrections as one revision,
+            # so Historial shows them and Deshacer brings back the raw text.
             db.save_transcript(conn, job["id"], transcript.to_dict())
+            if sum(counts.values()):
+                db.update_transcript(conn, job["id"], data=corrected.to_dict(),
+                                     edited_by=CORRECTIONS_AUTHOR, action=describe(counts))
             db.update_job(
                 conn, job["id"], status="done", stage=None, finished_at=db.now(),
                 duration_s=transcript.duration or job.get("duration_s"),
             )
-        log.info("job %s done: %s", job["id"], transcript.timing)
+        log.info("job %s done: %s corrections=%s", job["id"], transcript.timing, dict(counts))
         self._compact_audio(conn, job)
         notify.job_finished(conn, job)
         return 1

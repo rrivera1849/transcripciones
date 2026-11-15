@@ -29,6 +29,18 @@ dropped. No version fixed güey/exilio, so those need post-correction. One gap
 (~20 s after "En aquella ocasión," at 1:31:02) survived every version.
 Plan: `docs/PLAN_QUALITY.md`.
 
+Follow-up the same day, final code path on the same clips:
+
+| Run | Words | Missed speech | Invented lines | güey / exilio left |
+|---|---|---|---|---|
+| No prompt (= B) | 3405 | 307 s | 2 | 2 / 2 |
+| No prompt + corrections | 3400 | 310 s | 0 | 0 / 0 |
+| Names only as prompt (5 names) | 2731 | 461 s | 4 | 2 / 1 |
+
+Even a short list of the parties' names as the prompt lost a fifth of the
+words; the names were spelled right more often, but not worth the skipped
+speech. Whisper now gets no prompt and the names field was removed.
+
 ## 2026-09-19 — "Deserialization failed because the 'numpy' module is not available"
 
 The worker on the laptop failed to read a finished Modal result: WhisperX

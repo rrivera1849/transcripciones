@@ -15,10 +15,14 @@ import time
 from pathlib import Path
 
 from . import Segment, Transcript, Word
-from .prompt import LANGUAGE, build_prompt
+from .prompt import LANGUAGE
 
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "large-v3")
 DIARIZE_MODEL = "pyannote/speaker-diarization-community-1"
+# Recorded on every transcript. "sin-prompt": Whisper gets no initial prompt at
+# all. On real hearings any prompt, even just the parties' names, made it skip
+# speech and copy prompt text into the transcript (docs/FINDINGS.md 2026-11-15).
+PIPELINE = "sin-prompt-2026-11"
 
 log = logging.getLogger("whisperx_pipeline")
 
@@ -55,18 +59,7 @@ def _gpu_mem() -> str:
     return f"gpu {used:.1f} GiB used / {reserved:.1f} GiB reserved"
 
 
-def _set_prompt(vocabulary: list[str] | str | None) -> None:
-    """Swap the initial prompt in place; never reload the model for a vocabulary change."""
-    from dataclasses import replace
-
-    prompt = build_prompt(vocabulary)
-    if getattr(_asr.options, "initial_prompt", None) != prompt:
-        _asr.options = replace(_asr.options, initial_prompt=prompt)
-
-
-def load_models(
-    hf_token: str | None = None, diarize: bool = True, vocabulary: list[str] | str | None = None
-) -> None:
+def load_models(hf_token: str | None = None, diarize: bool = True) -> None:
     """Load ASR, alignment and (optionally) diarization models (idempotent)."""
     global _asr, _align, _diarize
     import whisperx
@@ -83,14 +76,11 @@ def load_models(
             use_auth_token=token,  # pyannote VAD model is gated
             asr_options={
                 "beam_size": 5,
-                "initial_prompt": build_prompt(vocabulary),
-                # Whisper hallucinates numerals/repeats on silence; VAD chunks already
-                # remove most silence, these keep the rest tidy.
+                "initial_prompt": None,  # see PIPELINE above
                 "suppress_numerals": False,
                 "condition_on_previous_text": False,
             },
         )
-    _set_prompt(vocabulary)
     if _align is None:
         _align = whisperx.load_align_model(language_code=LANGUAGE, device=device)
     if diarize and _diarize is None:
@@ -138,13 +128,12 @@ def transcribe_file(
     diarize: bool = True,
     min_speakers: int | None = None,
     max_speakers: int | None = None,
-    vocabulary: list[str] | str | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> Transcript:
     """Run the full pipeline on a 16 kHz mono WAV and return a Transcript."""
     import whisperx
 
-    load_models(diarize=diarize, vocabulary=vocabulary)
+    load_models(diarize=diarize)
     device = _device()
     timing: dict[str, float] = {}
     _release_gpu()
@@ -209,4 +198,5 @@ def transcribe_file(
         duration=duration,
         model=WHISPER_MODEL,
         timing=timing,
+        pipeline=PIPELINE,
     )

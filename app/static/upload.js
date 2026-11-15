@@ -53,7 +53,7 @@
     const { job_id } = await api("POST", "/upload/init", {
       filename: file.name, size: file.size,
       title: total > 1 ? file.name.replace(/\.[^.]+$/, "") : title.value,
-      min_speakers: $("speakers").value, vocabulary: $("vocabulary").value,
+      min_speakers: $("speakers").value,
     });
     const parts = Math.ceil(file.size / cfg.chunk);
     for (let i = 0; i < parts; i++) {

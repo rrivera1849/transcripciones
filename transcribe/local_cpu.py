@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from . import Segment, Transcript, Word
-from .prompt import INITIAL_PROMPT, LANGUAGE
+from .prompt import LANGUAGE
 
 
 def transcribe_file(wav_path: str | Path, model_size: str = "small") -> Transcript:
@@ -24,7 +24,7 @@ def transcribe_file(wav_path: str | Path, model_size: str = "small") -> Transcri
         beam_size=5,
         vad_filter=True,
         condition_on_previous_text=False,
-        initial_prompt=INITIAL_PROMPT,
+        initial_prompt=None,  # same as the GPU path: no fixed prompt
         word_timestamps=True,
     )
     segments = [

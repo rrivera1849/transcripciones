@@ -287,11 +287,10 @@ async def upload_init(request: Request, session: dict = Depends(current_session)
     title = (str(body.get("title") or "").strip() or Path(filename).stem)[:200]
     min_speakers = body.get("min_speakers")
     min_speakers = int(min_speakers) if min_speakers not in (None, "", 0, "0") else None
-    vocabulary = (str(body.get("vocabulary") or "").strip() or None)
     with db.connect() as conn:
         job_id = db.create_job(
             conn, title=title, original_filename=filename, size_bytes=size,
-            min_speakers=min_speakers, vocabulary=vocabulary and vocabulary[:1000],
+            min_speakers=min_speakers, vocabulary=None,  # names list no longer used
             created_by=session["u"],
         )
         path = config.AUDIO_DIR / job_id / f"input{ext}"

@@ -259,8 +259,7 @@ Docs: https://code.claude.com/docs/en/claude-code-on-the-web
 ```bash
 uv sync --group dev
 uv run modal deploy modal_app.py                # builds the image once (~10 min)
-uv run modal run modal_app.py --file samples/x.m4a --out out/ --min-speakers 3 \
-    --vocabulary "Morovis, Ciales, Lcda. Torres"   # optional: names, places, key terms
+uv run modal run modal_app.py --file samples/x.m4a --out out/ --min-speakers 3
 ```
 
 and paste the printed timing line plus a few lines of `out/x.txt` back to

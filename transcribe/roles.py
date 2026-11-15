@@ -2,7 +2,7 @@
 
 Diarization only tells us "voice 3"; the phrases a voice uses tell us whether
 it is the judge ("ha lugar", "este tribunal"), an attorney ("con la venia",
-"objeción"), the bailiff ("todos de pie") or a witness (short answers, "no
+"objeción"; "en representación de la parte demandante"), the bailiff ("todos de pie") or a witness (short answers, "no
 recuerdo"). Suggestions are conservative: a role is proposed only when one
 voice clearly outscores the others, and the user always confirms.
 """
@@ -18,6 +18,8 @@ from . import Transcript
 JUDGE, ATTORNEY, FISCAL, DEFENSE, WITNESS, BAILIFF, INTERPRETER = (
     "juez", "abogado", "fiscal", "defensa", "testigo", "alguacil", "intérprete",
 )
+# Civil cases: the attorney for each side.
+PLAINTIFF, RESPONDENT = "demandante", "demandada"
 
 # (role, weight, human label, regex on the lower-cased segment text)
 CUES: list[tuple[str, float, str, re.Pattern[str]]] = [
@@ -39,6 +41,13 @@ CUES: list[tuple[str, float, str, re.Pattern[str]]] = [
     (FISCAL, 1, "la fiscalía", re.compile(r"\bla fiscal[ií]a\b")),
     (DEFENSE, 3, "mi representado", re.compile(r"\bmi (representad[oa]|cliente)\b")),
     (DEFENSE, 1, "la defensa", re.compile(r"\bla defensa\b")),
+    # "...en representación de la parte demandante", "representamos a la señora demandante"
+    (PLAINTIFF, 3, "representa a la parte demandante",
+     re.compile(r"\brepresent\w*\b[^.?!]{0,60}?\bdemandantes?\b")),
+    (PLAINTIFF, 1, "la parte demandante", re.compile(r"\b(por|de) la parte demandante\b")),
+    (RESPONDENT, 3, "representa a la parte demandada",
+     re.compile(r"\brepresent\w*\b[^.?!]{0,60}?\bdemandad[oa]s?\b")),
+    (RESPONDENT, 1, "la parte demandada", re.compile(r"\b(por|de) la parte (de )?demandad[oa]s?\b")),
     (WITNESS, 1, "sí / no", re.compile(r"^(s[ií]|no)[,.]?(\s+(se[ñn]or[a]?|licenciad[oa]))?[.]?$")),
     (WITNESS, 1, "no recuerdo", re.compile(r"\bno (recuerdo|me acuerdo|s[eé])\b")),
     (WITNESS, 1, "yo estaba / yo vi", re.compile(r"\byo (estaba|fui|vi|le dije|llegu[eé]|me fui)\b")),
@@ -49,9 +58,10 @@ CUES: list[tuple[str, float, str, re.Pattern[str]]] = [
     (INTERPRETER, 3, "el testigo dice", re.compile(r"\b(el|la) testigo (dice|indica|responde|contesta)\b")),
 ]
 
-MIN_SCORE = {JUDGE: 3, ATTORNEY: 3, FISCAL: 2, DEFENSE: 2, WITNESS: 4, BAILIFF: 3, INTERPRETER: 3}
+MIN_SCORE = {JUDGE: 3, ATTORNEY: 3, FISCAL: 2, DEFENSE: 2, PLAINTIFF: 3, RESPONDENT: 3,
+             WITNESS: 4, BAILIFF: 3, INTERPRETER: 3}
 # Roles that at most one voice can hold.
-SINGLETON = (JUDGE, FISCAL, DEFENSE, BAILIFF, INTERPRETER, ATTORNEY)
+SINGLETON = (JUDGE, FISCAL, DEFENSE, PLAINTIFF, RESPONDENT, BAILIFF, INTERPRETER, ATTORNEY)
 
 
 @dataclass
@@ -77,6 +87,8 @@ def _display(role: str, transcript: Transcript) -> str:
         ATTORNEY: "Licenciado/a",
         FISCAL: "Fiscal",
         DEFENSE: "Lcdo./a. de la defensa",
+        PLAINTIFF: "Abogado/a parte demandante",
+        RESPONDENT: "Abogado/a parte demandada",
         WITNESS: "Testigo",
         BAILIFF: "Alguacil",
         INTERPRETER: "Intérprete",
@@ -104,7 +116,7 @@ def suggest_roles(transcript: Transcript) -> dict[str, RoleSuggestion]:
                 points[(seg.speaker, role)][label] += weight * n
     # Attorney cues support both the fiscal and the defense; specific cues decide.
     for roles in score.values():
-        for specific in (FISCAL, DEFENSE):
+        for specific in (FISCAL, DEFENSE, PLAINTIFF, RESPONDENT):
             if roles[specific]:
                 roles[specific] += roles[ATTORNEY]
 
@@ -127,7 +139,7 @@ def suggest_roles(transcript: Transcript) -> dict[str, RoleSuggestion]:
         out[sp] = RoleSuggestion(_display(role, transcript), _reason(label, hits[key][label]))
         taken.add(sp)
 
-    for role in (JUDGE, BAILIFF, INTERPRETER, DEFENSE, FISCAL, ATTORNEY):
+    for role in (JUDGE, BAILIFF, INTERPRETER, DEFENSE, FISCAL, PLAINTIFF, RESPONDENT, ATTORNEY):
         sp = best(role)
         if sp:
             assign(sp, role)

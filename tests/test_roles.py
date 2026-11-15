@@ -38,3 +38,17 @@ def test_a_voice_gets_at_most_one_role():
     t = _t([("A", "Ha lugar. Adelante."), ("A", "No ha lugar."), ("A", "Todos de pie.")])
     got = suggest_roles(t)
     assert list(got) == ["A"] and got["A"].name in ("Juez", "Juez/a")
+
+
+def test_civil_attorneys_are_suggested_by_side():
+    t = _t([
+        ("S0", "Se llama el caso. Adelante."),
+        ("S1", "Buenas tardes, Vuestro Honor. La licenciada Rivera, en representación de la parte demandante."),
+        ("S2", "Buenas tardes. Por la parte demandada, la licenciada Soto, que representa a los demandados."),
+        ("S0", "Ha lugar. Puede continuar."),
+        ("S1", "Objeción, señoría."),
+    ])
+    got = suggest_roles(t)
+    assert got["S1"].name == "Abogado/a parte demandante"
+    assert got["S2"].name == "Abogado/a parte demandada"
+    assert "representa a la parte" in got["S1"].reason

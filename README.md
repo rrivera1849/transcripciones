@@ -61,7 +61,8 @@ app/
 modal_app.py        Modal app: image with baked weights, Volume `audio-in`, Transcriber class, daily sweep
 transcribe/         shared package (also shipped into the Modal image)
   __init__.py       Transcript / Segment / Word dataclasses
-  prompt.py         Puerto Rican courtroom vocabulary for Whisper, role suggestions
+  prompt.py         language setting and the speaker-role menu
+  corrections.py    automatic fixes for words Whisper mishears (güey -> juez, ...)
   audio.py          ffmpeg probe / normalise / slice
   whisperx_pipeline.py  transcribe → align → diarize (runs on the GPU)
   local_cpu.py      faster-whisper on CPU for development

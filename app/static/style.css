@@ -82,7 +82,11 @@ mark.current { background: #f59e0b; color: #fff; }
 /* doubtful words (low alignment score) */
 .lowc { background:#fff1cc; border-bottom:2px dotted #d97706; border-radius:2px; cursor:pointer; }
 .lowc:hover { background:#ffe19a; }
-.hide-lowc .lowc { background:none; border-bottom:none; cursor:text; }
+/* automatic fixes (güey -> juez) and suggestions (¿estipula?) from transcribe.corrections */
+.lowc.fixed { background:#e6f4ea; border-bottom:2px solid #2f8a4f; }
+.lowc.fixed:hover { background:#cdebd6; }
+.lowc.sugg { background:#e8eefc; border-bottom:2px dotted #3b5bdb; }
+.lowc.sugg:hover { background:#d3defa; }
 .lowc-toggle { display:flex; align-items:center; gap:4px; white-space:nowrap; color:var(--muted); }
 .lowc-toggle input { margin:0; }
 @media (max-width: 800px) { .lowc-toggle { width:100%; } }
@@ -108,6 +112,8 @@ html[data-size="muy-grande"] { --fs: 23px; }
 html[data-contrast="1"] { --ink:#000; --muted:#333; --line:#555; --bg:#fff; --card:#fff; --brand:#1d4ed8; }
 html[data-contrast="1"] .turn { border-width: 2px; }
 html[data-contrast="1"] .lowc { background:#ffe066; border-bottom-color:#7c2d12; }
+html[data-contrast="1"] .lowc.fixed { background:#b7f0c8; border-bottom-color:#0b4d22; }
+html[data-contrast="1"] .lowc.sugg { background:#c5d4ff; border-bottom-color:#1e3a8a; }
 html[data-contrast="1"] a, html[data-contrast="1"] .link { text-decoration: underline; }
 .top-right { display:flex; align-items:center; gap:14px; }
 .ui-menu { position: relative; }
@@ -141,3 +147,6 @@ html[data-contrast="1"] a, html[data-contrast="1"] .link { text-decoration: unde
 [hidden] { display: none !important; }
 .ui-panel label { flex-direction: row; font-weight: 400; }
 .ui-panel input { width: auto; margin: 0; }
+
+/* "Marcar dudosas y correcciones" off: last and specific enough to beat the contrast colours */
+.hide-lowc .lowc, html[data-contrast] .hide-lowc .lowc { background:none; border-bottom:none; cursor:text; }

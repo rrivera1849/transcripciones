@@ -132,11 +132,17 @@ def is_doubtful(word: Word) -> bool:
     )
 
 
+def is_marked(word: Word) -> bool:
+    """Shown with a mark: doubtful, automatically corrected, or with a suggestion."""
+    return bool(word.fixed_from or word.suggest) or is_doubtful(word)
+
+
 def turn_spans(turn: Turn) -> list[tuple[str, Word | None]]:
     """Split a turn's text into (text, doubtful_word) runs for rendering.
 
-    Consecutive confident words are merged into one span with `None`; each
-    doubtful word gets its own span carrying the Word (for its timestamp).
+    Consecutive unmarked words are merged into one span with `None`; each
+    marked word (see is_marked) gets its own span carrying the Word, for its
+    timestamp and for what to show on hover.
     Returns [] when the turn has no usable word alignment.
     """
     if not turn.words:
@@ -144,7 +150,7 @@ def turn_spans(turn: Turn) -> list[tuple[str, Word | None]]:
     spans: list[tuple[str, Word | None]] = []
     for w in turn.words:
         sep = " " if spans else ""
-        if is_doubtful(w):
+        if is_marked(w):
             if spans and spans[-1][1] is None:
                 spans[-1] = (spans[-1][0] + sep, None)
             elif spans:

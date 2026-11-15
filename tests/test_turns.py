@@ -70,16 +70,6 @@ def test_long_turn_breaks_at_a_pause():
     assert len(group_turns(segs)) == 1  # no pause long enough to break
     segs[7] = Segment(72.0, 79.5, "frase 72", "S1")  # 2.5 s pause before it, past 60 s
     assert len(group_turns(segs)) == 2
-
-
-def test_build_prompt_appends_vocabulary():
-    from transcribe.prompt import INITIAL_PROMPT, build_prompt
-
-    assert build_prompt(None) == INITIAL_PROMPT
-    p = build_prompt("Morovis, Ciales, Lcda. Torres")
-    assert p.startswith(INITIAL_PROMPT) and p.endswith("Morovis, Ciales, Lcda. Torres.")
-
-
 def test_pipeline_output_is_plain_python():
     """The Modal result is unpickled on a host without numpy: no numpy scalars allowed."""
     import json

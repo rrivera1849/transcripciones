@@ -1,6 +1,7 @@
-# Plan: transcription quality fix and "Volver a transcribir"
+# Plan: transcription quality fix
 
-Status: **planned, not started.** Evidence is in `docs/FINDINGS.md`
+Status: **implemented 2026-11-15; needs `modal deploy` plus the normal deploy.**
+Evidence is in `docs/FINDINGS.md`
 (2026-11-15 entry): on 12 clips from a real hearing, removing the fixed prompt
 ("version B") eliminated prompt sentences leaking into transcripts, produced
 13% more words and 21% less missed speech than the current setup. No setting
@@ -8,45 +9,38 @@ fixed the misheard legal words, so those get a corrections list.
 
 ## Goals
 
-1. Transcribe with version B: no fixed prompt; only the names the user types.
+1. Transcribe with version B: no prompt at all.
 2. Fix the recurring misheard words automatically, visibly and reversibly.
-3. A "Volver a transcribir" button, so existing hearings can be redone with the
-   new setup and reviewed by the person who uploaded them.
+3. The role names from her email in the speaker list.
+
+A "Volver a transcribir" button was considered and dropped: to try the new
+setup, the hearing is uploaded again.
 
 ## Decisions
 
 | Question | Decision |
 |---|---|
-| Prompt | No fixed paragraph. If "Nombres y lugares" is filled, the prompt is just those names. Empty field = no prompt. |
+| Prompt | None. The plan first kept the user's names as a prompt; tested on the same clips, names alone cost 20% of the words and 50% more missed speech, so Whisper gets no prompt and the "Nombres y lugares" field is gone from the upload form (the column stays for old jobs). |
 | Where corrections run | On the app host, when a transcript arrives. No Modal deploy needed for rule changes. |
-| Re-transcribe target | A **new** transcript next to the original. The original, with all her edits, stays untouched until she deletes it. |
-| Re-transcribe settings | Same speaker count and same names as the original job. Owner is the original uploader, so it appears as hers and the "done" email goes to her. |
 
-### Open decisions (defaults in bold)
+### Decisions taken on defaults (revisit with her)
 
-1. **Speaker count meaning.** Today "¿Cuántas personas hablan?" is sent as a
-   *minimum* (`min_speakers`): diarization may find more voices. Re-transcribe
-   reuses the same value with the **same meaning**. Alternative: send it as the
-   exact count (min = max), which forces unheard voices (alguacil, secretaria)
-   into someone else's label.
-2. **Role list** (from her email). **Replace "Lcdo./Lcda. de la defensa" with
+1. **Role list** (from her email). **Replaced "Lcdo./Lcda. de la defensa" with
    "Abogado parte demandante", "Abogada parte demandante", "Abogado parte
    demandada", "Abogada parte demandada"**, matching the Juez/Jueza pattern.
    Keep the defensa entries only if she also does criminal hearings.
-3. **Forms of address.** **Leave "Vuestro Honor" / "Su Señoría" as Whisper
+2. **Forms of address.** **Leave "Vuestro Honor" / "Su Señoría" as Whisper
    writes them** until she says which capitalization she uses.
 
 ## Work items
 
 ### 1. Pipeline: version B (needs `modal deploy`)
 
-- `transcribe/prompt.py`: delete `INITIAL_PROMPT`. `build_prompt(vocabulary)`
-  returns `None` when empty, else the names joined with ", " and a final period.
-- `transcribe/whisperx_pipeline.py`: `initial_prompt` may be `None`;
-  `_set_prompt` already swaps in place.
-- `transcribe/local_cpu.py`: same prompt handling, so dev runs match.
-- Record the setup on each transcript (`Transcript.pipeline = "b-2026-11"`) so
-  the app can tell old transcripts from new ones.
+- `transcribe/prompt.py`: `INITIAL_PROMPT` and the names prompt removed.
+- `transcribe/whisperx_pipeline.py` and `transcribe/local_cpu.py`:
+  `initial_prompt=None`; the `vocabulary` option is gone end to end (form,
+  upload route, worker, Modal call).
+- Every transcript records its setup: `Transcript.pipeline = "sin-prompt-2026-11"`.
 - Not done: version C (shorter chunks, looser VAD) and D (sequential retry);
   both lost to B in the test.
 
@@ -76,61 +70,37 @@ Details:
   relabelled "Marcar dudosas y correcciones".
 - Exports (Word, .txt, .srt) contain the corrected text without marks.
 
-### 3. "Volver a transcribir" button
-
-- Shown on the transcript page when the job is `done` and its audio still
-  exists. When the audio was already deleted (retention), show a short note
-  instead of the button.
-- `POST /t/{id}/retranscribir`: confirm dialog in Spanish ("Se creará una
-  transcripción nueva con el mismo audio. La actual no se borra."), then:
-  - copy the stored audio into a new job folder (copy, not share: retention
-    deletes each job's folder independently);
-  - new job: title "<título> (nueva transcripción)", same `min_speakers`,
-    same `vocabulary`, `created_by` = original uploader, new column
-    `source_job_id` = original id (migration);
-  - refuse if a re-transcription of the same job is already queued or running,
-    so a double click can't start two;
-  - redirect to the list, where it shows "En cola" like any upload.
-- Speaker names are **not** copied: diarization numbers voices differently each
-  run. The role suggestions ("¿Es Juez?…") cover most of it.
-- Audio quality: the stored audio is the AAC 96 kbps playback copy (the
-  original is deleted after the first transcription). Verify it gives the same
-  results as the original before relying on it (step 5).
-
-### 4. Roles (per open decision 2)
+### 3. Roles (per open decision 1)
 
 - `transcribe/prompt.py` `ROLE_SUGGESTIONS` and `transcribe/roles.py` display
   names; add cues "parte demandante" / "parte demandada" so suggestions can
   name them.
 
-### 5. Verification before deploy
+### 4. Verification (done)
 
-- Unit tests: every rule in tiers 1–4, plus negatives that must stay untouched
-  ("documento que se titula Contrato", "titular", "el exilio político",
-  "suscrito ante mí"); word list and text stay in sync; Deshacer restores raw.
-- App tests: button visibility (done / running / audio deleted); route copies
-  audio, speaker count, names, owner and sets `source_job_id`; duplicate click
-  refused; email goes to the original uploader.
-- Re-run the 12 test clips through the final code path on CPU, both with no
-  names and with a names list, and compare against version B's numbers.
-- Convert two clips to AAC 96 kbps and check the output matches the FLAC run.
-- Browser check of the button, the marks and the toggle.
-- `uv run pytest -q -W ignore` and `uv run ruff check .` clean.
+- 26 correction tests: every rule, plus text that must stay untouched
+  ("se titula Contrato", "titular", "suscrito ante mí"); words stay in sync
+  with text; marks survive storage. App test: a finished job is saved raw, then
+  corrected as one Historial entry by "La Transcriptora"; Deshacer brings back
+  the raw text; exports carry the corrected text. Role test for both sides.
+  Full suite: 79 passed; ruff clean.
+- The 12 clips through the final code path give exactly version B's output;
+  after corrections: no "güey", no "exilio", no invented lines (FINDINGS).
+- Browser: marks, tooltips, toggle in normal and high-contrast mode,
+  click-to-listen, Historial entry, role menu, upload without the names field.
 
-### 6. Rollout
+### 5. Rollout
 
-1. From the laptop: `uv run modal deploy modal_app.py` (prompt change).
+1. From the laptop: `uv run modal deploy modal_app.py` (no-prompt change; until
+   then new uploads still use the old prompt, but corrections already apply).
 2. On the VPS: `./scripts/deploy.sh`.
-3. Logged in as her, press "Volver a transcribir" on the September 22 and
-   December 1 hearings. **Deadline:** audio is deleted 30 days after
-   transcription (`RETENTION_DAYS`); both were transcribed on 2026-11-14, so
-   about 2026-12-14 unless the VPS `.env` sets a different value.
-4. She reviews the new versions against her corrected ones and reports what is
-   still wrong; new recurring errors become rules.
+3. Upload one of the hearings again; she reviews it against her corrected
+   version and reports what is still wrong. New recurring errors become rules.
 
 ## Later
 
 - Offer her own find-and-replace choices as new correction rules.
-- Apply corrections to existing transcripts without re-transcribing.
+- Apply corrections to existing transcripts without uploading again.
+- A "Volver a transcribir" button (dropped for now).
 - The skip at 1:31:02 of the September hearing survived every setup; revisit
   once she says what was said there.

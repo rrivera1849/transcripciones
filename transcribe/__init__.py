@@ -18,6 +18,10 @@ class Word:
     end: float | None = None
     score: float | None = None
     speaker: str | None = None
+    # Set by transcribe.corrections: the text before an automatic fix ("güey"),
+    # or a likely intended word to suggest to the reader ("estipula").
+    fixed_from: str | None = None
+    suggest: str | None = None
 
 
 @dataclass
@@ -38,6 +42,8 @@ class Transcript:
     duration: float | None = None
     model: str | None = None
     timing: dict[str, float] = field(default_factory=dict)
+    # Which transcription setup produced this (see whisperx_pipeline.PIPELINE).
+    pipeline: str | None = None
 
     # --- speakers -------------------------------------------------------
     def speakers(self) -> list[str]:
@@ -71,4 +77,5 @@ class Transcript:
             duration=d.get("duration"),
             model=d.get("model"),
             timing=d.get("timing", {}),
+            pipeline=d.get("pipeline"),
         )

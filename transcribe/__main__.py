@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import Transcript
 from .audio import normalize, probe, slice_audio
+from .corrections import apply_corrections, describe
 from .export import write_all
 
 
@@ -36,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.from_json:
         transcript = Transcript.from_dict(json.loads(args.from_json.read_text(encoding="utf-8")))
         stem = args.from_json.stem
+        transcript, fixes = apply_corrections(transcript)
+        if sum(fixes.values()):
+            print(describe(fixes))
         paths = write_all(transcript, args.out, stem, title=stem)
         print(f"segments: {len(transcript.segments)}  speakers: {transcript.speakers()}")
         for k, p in paths.items():
@@ -71,6 +75,9 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     stem = src.stem + (f"_slice{args.slice.replace(':', '-')}" if args.slice else "")
+    transcript, fixes = apply_corrections(transcript)
+    if sum(fixes.values()):
+        print(describe(fixes))
     paths = write_all(transcript, args.out, stem, title=src.stem)
     print(f"segments: {len(transcript.segments)}  speakers: {transcript.speakers()}")
     print(f"timing: {transcript.timing}")

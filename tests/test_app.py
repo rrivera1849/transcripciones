@@ -84,10 +84,10 @@ def test_upload_then_worker_then_transcript_page(client, tmp_path):
 
     login(client)
     wav = _make_wav(tmp_path / "vista.wav", seconds=1.5)
-    job_id = upload(client, wav, title="Vista de prueba", min_speakers=3, vocabulary="Morovis")
+    job_id = upload(client, wav, title="Vista de prueba", min_speakers=3)
     with db.connect() as conn:
         job = db.get_job(conn, job_id)
-    assert job["status"] == "queued" and job["min_speakers"] == 3 and job["vocabulary"] == "Morovis"
+    assert job["status"] == "queued" and job["min_speakers"] == 3
     assert job["duration_s"] and 1.4 < job["duration_s"] < 1.6
 
     backend = FakeBackend(json.loads(FIX.read_text(encoding="utf-8")))
@@ -542,3 +542,61 @@ def test_static_assets_are_versioned_and_cacheable(client):
     r = client.get(url)
     assert r.status_code == 200 and "immutable" in r.headers["cache-control"]
     assert client.get("/static/style.css").headers["cache-control"] == "no-cache"
+
+
+def test_automatic_corrections_are_visible_and_undoable(client, tmp_path):
+    from app.worker import FakeBackend, Worker
+
+    login(client)
+    job_id = upload(client, _make_wav(tmp_path / "v.wav", seconds=1.0), title="Vista", min_speakers=2)
+
+    def seg(start, text, speaker):
+        return {"start": start, "end": start + 2, "text": text, "speaker": speaker, "words": [
+            {"word": w, "start": start + i * 0.3, "end": start + i * 0.3 + 0.2, "score": 0.9, "speaker": speaker}
+            for i, w in enumerate(text.split())]}
+
+    result = {"segments": [
+        seg(0.0, "Tengo objeción, güey.", "SPEAKER_00"),
+        seg(3.0, "Gracias por ver el video.", "SPEAKER_01"),
+        seg(6.0, "Que se admita como ex-civil.", "SPEAKER_00"),
+        seg(9.0, "No, hemos sometido.", "SPEAKER_00"),
+    ], "language": "es", "duration": 12.0, "pipeline": "sin-prompt-2026-11"}
+    Worker(FakeBackend(result)).tick()
+
+    page = client.get(f"/t/{job_id}").text
+    assert "güey" not in page.split('title="')[0] and "Gracias por ver el video" not in page
+    assert 'class="lowc fixed"' in page and "«güey.» → «juez.»" in page and ">juez.</span>" in page
+    assert 'class="lowc sugg"' in page and "¿Quiso decir «lo damos por sometido»?" in page
+    assert "Marcar dudosas y correcciones" in page
+    assert 'id="undo" title="Deshacer el último cambio" disabled' not in page
+    hist = client.get(f"/t/{job_id}/historial").text
+    assert "La Transcriptora" in hist and "correcciones automáticas: 2 palabras corregidas" in hist
+    assert "1 frase inventada quitada" in hist
+    txt = client.get(f"/t/{job_id}/download/txt").text
+    assert "juez." in txt and "exhibit." in txt and "güey" not in txt and "fixed" not in txt
+
+    # Deshacer brings back exactly what Whisper wrote
+    tok = {"csrf_token": csrf_of(client)}
+    client.post(f"/t/{job_id}/deshacer", data=tok, follow_redirects=False)
+    page = client.get(f"/t/{job_id}").text
+    assert "güey." in page and "Gracias por ver el video." in page and 'class="lowc fixed"' not in page
+
+
+def test_role_menu_has_civil_attorneys(client, tmp_path):
+    login(client)
+    page = client.get(f"/t/{_done_job(client, tmp_path)}").text
+    assert "Abogado parte demandante" in page and "Abogada parte demandada" in page
+    assert "Lcdo. de la defensa" not in page
+
+
+def test_a_failing_correction_still_saves_the_transcript(client, tmp_path, monkeypatch):
+    from app import worker
+
+    def boom(_t):
+        raise RuntimeError("bad rule")
+
+    monkeypatch.setattr(worker, "apply_corrections", boom)
+    login(client)
+    job_id = _done_job(client, tmp_path)
+    page = client.get(f"/t/{job_id}").text
+    assert "Se abre la sesión" in page and "Historial" in page
