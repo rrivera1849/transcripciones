@@ -2,6 +2,33 @@
 
 Running notes from real runs. Newest first.
 
+## 2026-11-15 — The fixed prompt leaks into transcripts; removing it wins
+
+Two real hearings (22 Sep and 1 Dec 2025), transcribed in production, showed
+the prompt's own sentences in the text ("Fueron al cuartel de la policía y a la
+sala de emergencias", twice in a row, followed by ~50 s with no text),
+"Gracias por ver el video.", sentences cut mid-way followed by ~30 s gaps, and
+recurring misheard words: güey (juez), ex-civil / exilio (exhibit),
+"Se titula." (Se estipula.), "no hemos sometido" (lo damos por sometido).
+
+Test: 12 clips (37.8 min) cut from the 22 Sep original, run on CPU (int8) with
+WhisperX 3.8.6 + large-v3, no diarization. "Missed speech" = Silero VAD speech
+(threshold 0.5) with no transcribed word within 0.5 s. Word counts are after
+the app's own repeat cleanup.
+
+| Version | Words | Missed speech | Prompt leaks | Invented lines |
+|---|---|---|---|---|
+| A: current (fixed prompt) | 2911 | 388 s | yes (3 clips) | 2 |
+| **B: no prompt** | **3282** | **307 s** | none | 2 |
+| C: B + VAD onset 0.30/0.20 + 15 s chunks | 3008 | 335 s | none | 3 |
+| D: no prompt, sequential faster-whisper, temperature fallback | 2858 | 333 s | none | 0 |
+
+A on the clips reproduced the production leaks exactly, so clips are a fair
+stand-in. B recovered ~25 s of dialogue at 1:38:22 that every other version
+dropped. No version fixed güey/exilio, so those need post-correction. One gap
+(~20 s after "En aquella ocasión," at 1:31:02) survived every version.
+Plan: `docs/PLAN_QUALITY.md`.
+
 ## 2026-09-19 — "Deserialization failed because the 'numpy' module is not available"
 
 The worker on the laptop failed to read a finished Modal result: WhisperX
